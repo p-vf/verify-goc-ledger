@@ -1,0 +1,20 @@
+[project]
+name = "verify-goc-ledger"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "pvonf", email = "pvonf@shoreham" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pygit2>=1.19.2",
+]
+
+[project.scripts]
+generate = "verify_goc_ledger:generate_repo"
+verify_git_cli = "verify_goc_ledger:verify_repo_git_cli"
+
+[build-system]
+requires = ["uv_build>=0.9.12,<0.10.0"]
+build-backend = "uv_build"
