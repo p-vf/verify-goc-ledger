@@ -14,6 +14,7 @@
 %\newcommand{\todo}[1]{\emph{\colorbox{Yellow}{TODO #1}}}
 \newcommand{\balance}[0]{\textit{balance}}
 \newcommand{\apply}[0]{\textit{apply}}
+\newcommand{\acc}[0]{\textit{acc}}
 \newcommand{\deltacc}[1]{#1^\delta}
 \newcommand{\id}[1]{#1_\textit{id}}
 
@@ -23,7 +24,7 @@ TODO
 \section{Introduction}
 TODO
 
-\section{Background}
+\section{Background / Terminology} \todo{add description of }
 TODO
 
 \section{Design of Test Repository}
@@ -80,21 +81,35 @@ Since this is only a benchmark of the verification of commits, I don't include t
 \section{Invariants to Check}
 
 \subsection{Invariants on delta account $\deltacc{A}$}
+\label{sec:invariants-delta-a}
 The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$.
+\begin{enumerate}
+    \item [$\delta$1] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$.
+    \item [$\delta$2] (non-negative balance after giving) If $\deltacc A_\rightarrow$ is non-empty, the constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
+    \item [$\delta$3] (non-negative balance after destroying) If $\deltacc A_\downarrow$ is present, the constraint $L_\textit{after}[\id{\deltacc A}] \ge 0$ must hold.
+    \item [$\delta$4] (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $\deltacc A_{\leftarrow}$, i.e. the author ids of authors from which the author with id $A_\textit{id}$ acked something).
+    \item [$\delta$5] (valid creator) If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
+\end{enumerate}
+
+\subsection{Invariants on Message $M$ and corresponding delta account $\acc(M)$}
+A message $M'$ is relevant to message $M$ if one of the following hold
 \begin{itemize}
-    \item date of commits from the same author must be non-decreasing when following the commits in causal order
-    \item Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$.
-    \item If $\deltacc A_\rightarrow$ is non-empty, the constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
-    \item If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $A$).
-    \item If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
-    \item If $\deltacc A_\downarrow$ is present, the constraint $L_\textit{after}[\id{\deltacc A}] \ge 0$ must hold.
+    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{id}$ \todo{I am not sure if this dependency is necessary.. }
+    \item $\acc(M)_{\leftarrow *}$ contains $M'_\textit{id}$
 \end{itemize}
 
-\subsection{Invariants on Message $M$ and corresponding delta account $M_\textit{acc}$}
-$M_\textit{deps}$ must be the set of Message ids of the latest messages known to $M_\textit{author}$ from authors which are relevant to the transaction. Being relevant in a transaction means the following: if $M_{\textit{acc}\rightarrow}$ is defined, all the authors in $M_{\textit{acc}\rightarrow *}$ are relevant for the transaction. If $M_{\textit{acc}\leftarrow}$ is defined, all the authors in $M_{\textit{acc}\leftarrow *}$ are relevant.
+\textbf{Relevant Dependencies} \\
+The dependencies of a message $M$ with corresponding delta account $\acc(M)$ are relevant if the following holds: For all $msgId \in M_\textit{deps}$, there exists $M'$ with $\texttt{MsgId}(M') = msgId$ and $M'$ is relevant to $M$.\\
+In order for a message $M$ to be GOC-Ledger valid, the following must hold \footnote{in these invariants, we allow that a message has multiple dependencies from the same author. This is covered by the 2P-BFT-Log invariant M5.} \todo{Find a better name for this than ``GOC-Ledger valid''}
+\begin{itemize}
+    \item the invariants $\delta1$ to $\delta6$ (see Section \ref{sec:invariants-delta-a}) must be satisfied for $\acc(M)$
+    \item (non-decreasing dates) $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
+    \item the dependencies of $M$ are relevant
+    \item for all $M' \in M_\textit{deps}\cup \{M_prev\}\}$, $M'$ must also be GOC-Ledger valid
+\end{itemize}
 
-\subsection{Invariants Message $M$ inherited from 2P-BFT-Log}
+\subsection{Invariants on Message $M$ inherited from 2P-BFT-Log}
 \begin{enumerate}
     \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \texttt{MsgId}(M'): M' \text{exists and is valid.}$
     \item [M2] \emph{(single author)}: if $M_\textit{prev} = \texttt{MsgId}(M')$ then $M'_\textit{author} = M_\textit{author}$.
