@@ -12,8 +12,8 @@ class Account:
     id: str
     created: int
     destroyed: int
-    acked: dict[str, int]
-    given: dict[str, int]
+    acked: dict[bytes, int]
+    given: dict[bytes, int]
     def __init__(self, id, created=0, destroyed=0, acked=None, given=None):
         if acked is None:
             acked = dict()

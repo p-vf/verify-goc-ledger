@@ -12,7 +12,7 @@ from common.misc import int_from_bytes, run_cmd
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
-from datastructures import Commit, Child, Tree
+from datastructures import Commit, Child, Tree, Statistics
 
 def update_frontier(commit: Commit, frontier: dict[bytes, Commit]):
     frontier[commit.author_name] = commit
@@ -65,6 +65,8 @@ class GitCliGocVerifier:
             self._commit_cache[commit.id] = commit
             msg = self.verify_commit(commit)
             delta_acc, err = self.get_delta_acc(commit)
+            tmp = self.verify_delta_acc(delta_acc, commit)
+            err += tmp
             # print(delta_acc)
             # msg += verify_delta_account(delta_acc, ledger)
             update_frontier(commit, self._frontier)
@@ -125,21 +127,58 @@ class GitCliGocVerifier:
         
         return res
 
-    def verify_delta_acc(self, a: Account, commit: Commit):
+    def verify_delta_acc(self, a: Account, commit: Commit) -> list[str]:
         # if the delta account has non default values, in some fields, the following have to be checked:
         # field created: check that the author is one of the defined creators
         # field destroyed: check that the balance of the author is non-negative after this operation
         # field acked: check that the newly specified acknowledgements are reflected by a corresponding given field in the giver
         # field given: check that the balance is non-negative after this operation
         
+        has_destroyed = False
+        has_acked = False
+        has_given = False
+        invalid = False
+        res = []
         if a.created > 0: # we currently don't have a mechanism to check whether a person is authorised to create tokens
             pass
-        raise NotImplementedError("verify_delta_acc")
+        if a.destroyed > 0:
+            has_destroyed = True
+        if a.acked:
+            has_acked = True
+        if a.given:
+            has_given = True
+        if not (has_given or has_acked or has_destroyed):
+            return []
+        l = self.recreate_ledger(commit.parents)
+        if has_given or has_destroyed:
+            lg = l.copy()
+            update_ledger(a, lg)
+            if lg[a.id].balance() < 0:
+                res.append(f"author {a.id} didn't have enough money to destroy")
+                invalid = True
+        if has_acked:
+            for author, amount in a.acked.items():
+                if l[author].given[a.id] < amount:
+                    res.append(f"author {a.id} wasn't given the money they acked from {author}")
+                    invalid = True
+        if invalid:
+            # TODO this commit is invalid, do something!
+            pass
+        return res
     
     def recreate_ledger(self, commit_ids: list[bytes]):
         ledger = {}
-        #TODO
-        raise NotImplementedError("recreate_ledger")
+        # TODO only allow verified commits
+        relevant_commit_ids = run_cmd(f"git rev-list {bytes.join(b" ", commit_ids).decode()}", cwd=self.git_path).splitlines()
+        for commit_id in relevant_commit_ids:
+            commit = self.get_commit(commit_id)
+            a, _ = self.get_delta_acc(commit)
+            update_ledger(a, ledger)
+            
+        return ledger
+
+    def get_commit(self, oid: bytes) -> Commit:
+        return parse_commit(run_cmd(f"git log --format={commit_format} -n 1 {oid.decode()}", cwd=self.git_path))
         
     
     def get_delta_acc(self, commit: Commit) -> Tuple[Account, list[str]]:
@@ -158,13 +197,13 @@ class GitCliGocVerifier:
             if child.name == b"acked":
                 for entry in parse_tree(child.id, run_cmd(f"git ls-tree {child.id.decode()}", self.git_path)).children:
                     assert entry.name is not None
-                    a.acked[entry.name.decode()], minimal_bytes = self.obj_cache_lookup(entry.id)
+                    a.acked[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
                     if not minimal_bytes:
                         res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
             if child.name == b"given":
                 for entry in parse_tree(child.id, run_cmd(f"git ls-tree {child.id.decode()}", self.git_path)).children:
                     assert entry.name is not None
-                    a.given[entry.name.decode()], minimal_bytes = self.obj_cache_lookup(entry.id)
+                    a.given[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
                     if not minimal_bytes:
                         res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
         return a, res
@@ -191,9 +230,9 @@ def main():
         print(usage_str)
         print("cwd:", os.getcwd())
         exit(2)
-    profile = False
+    profile = True
     if profile:
-        cProfile.run("verify_repository(self.git_path)", "git-cli.stats")
+        cProfile.runctx("g.verify()", {}, {"g": GitCliGocVerifier(git_path)}, "./git-cli.stats")
         print("statistics saved to ./git-cli.stats")
     else:
         g = GitCliGocVerifier(git_path)
