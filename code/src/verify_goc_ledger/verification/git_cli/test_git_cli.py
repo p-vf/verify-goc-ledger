@@ -1,6 +1,7 @@
 import sys
 import os
 import cProfile
+import time
 from typing import Tuple
 
 from pathlib import Path
@@ -233,13 +234,15 @@ def main():
         print(usage_str)
         print("cwd:", os.getcwd())
         exit(2)
-    profile = True
+    profile = False
     if profile:
         cProfile.runctx("g.verify()", {}, {"g": GitCliGocVerifier(git_path)}, "./git-cli.stats")
         print("statistics saved to ./git-cli.stats")
     else:
         g = GitCliGocVerifier(git_path)
+        start_time = time.perf_counter_ns()
         g.verify()
+        print(f"running time: {(time.perf_counter_ns() - start_time) / 1_000_000_000} s")
 
 if __name__ == "__main__":
     main()

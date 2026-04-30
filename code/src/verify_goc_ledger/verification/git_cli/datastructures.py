@@ -28,6 +28,7 @@ class Tree:
         self.id = id
         self.children: list[Child] = children
 
+# TODO maybe incorporate this class into the verifiers
 class Statistics:
     def __init__(self):
         self.no_commit_accesses = 0
@@ -47,4 +48,4 @@ class Statistics:
         self.no_rev_list_calls = 0
     
     def end(self):
-        self.time = (self._start_time - time.perf_counter_ns()) / 1000000
+        self.time = (time.perf_counter_ns() - self._start_time) / 1000000
