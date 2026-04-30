@@ -97,7 +97,7 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
         for account_id, num in acc.given.items():
             given_hash = repo.create_blob(int_to_bytes(num))
             validate_hash(given_hash.decode(), "given_hash")
-            tree_given.append(("blob", given_hash.decode(), "account/given/" + account_id))
+            tree_given.append(("blob", given_hash.decode(), "account/given/" + account_id.decode()))
         tree_given_hash = repo.create_tree(tree_given, "account/given")
         validate_hash(tree_given_hash.decode(), "tree_given_hash")
         tree_account.append(("tree", tree_given_hash.decode(), "account/given"))
@@ -107,14 +107,14 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
         for account_id, num in acc.acked.items():
             acked_hash = repo.create_blob(int_to_bytes(num))
             validate_hash(acked_hash.decode(), "acked_hash")
-            tree_acked.append(("blob", acked_hash.decode(), "account/acked/" + account_id))
+            tree_acked.append(("blob", acked_hash.decode(), "account/acked/" + account_id.decode()))
         tree_acked_hash = repo.create_tree(tree_acked, "account/acked")
         validate_hash(tree_acked_hash.decode(), "tree_acked_hash")
         tree_account.append(("tree", tree_acked_hash.decode(), "acked"))
 
     tree_hash = repo.create_tree(tree_account, "account")
     ref_prefix = "refs/heads/frontier/" + token_type + "/"
-    previous = repo.show_ref(ref_prefix + acc.id)
+    previous = repo.show_ref(ref_prefix + acc.id.decode())
     assert len(previous) <= 1
 
     if len(previous) == 0: # if this is the first commit of this author, don't add parents.
@@ -127,8 +127,8 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
         if previous[0] in deps:
             raise Exception("previous commit in pars")
         parents = previous + deps
-    commit_hash = repo.create_commit(tree_hash.decode(), parents, acc.id, msg, date=f"{date} +0100").decode()
+    commit_hash = repo.create_commit(tree_hash.decode(), parents, acc.id.decode(), msg, date=f"{date} +0100").decode()
     repo.reset_index()
     date += 1
-    repo.update_ref(ref_prefix + acc.id, commit_hash)
+    repo.update_ref(ref_prefix + acc.id.decode(), commit_hash)
     return commit_hash

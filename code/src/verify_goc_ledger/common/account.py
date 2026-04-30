@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-type Ledger = dict[str, Account]
+type Ledger = dict[bytes, Account]
 
 def update_ledger(account: Account, ledger: Ledger):
     if account.id in ledger:
@@ -9,12 +9,12 @@ def update_ledger(account: Account, ledger: Ledger):
         ledger[account.id] = account
 
 class Account:
-    id: str
+    id: bytes
     created: int
     destroyed: int
     acked: dict[bytes, int]
     given: dict[bytes, int]
-    def __init__(self, id, created=0, destroyed=0, acked=None, given=None):
+    def __init__(self, id: bytes, created: int =0, destroyed: int =0, acked: dict[bytes, int] | None =None, given: dict[bytes, int] | None =None):
         if acked is None:
             acked = dict()
         if given is None:

@@ -154,7 +154,10 @@ class GitCliGocVerifier:
             lg = l.copy()
             update_ledger(a, lg)
             if lg[a.id].balance() < 0:
-                res.append(f"author {a.id} didn't have enough money to destroy")
+                if has_given:
+                    res.append(f"author {a.id} didn't have enough money to give")
+                if has_destroyed:
+                    res.append(f"author {a.id} didn't have enough money to destroy")
                 invalid = True
         if has_acked:
             for author, amount in a.acked.items():

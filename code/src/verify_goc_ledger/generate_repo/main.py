@@ -43,10 +43,10 @@ class ValidRepoGeneratorV1:
             print("created or read authors:")
             print("authors:", authorkeys, "\ncorresponding names:", authors)
 
-        ledger: dict[str, Account] = dict()
+        ledger: dict[bytes, Account] = dict()
 
         for a in authors:
-            ledger[a] = Account(a)
+            ledger[a.encode()] = Account(a.encode())
 
         for account in ledger.values():
             act = account.create(1000)
@@ -60,10 +60,10 @@ class ValidRepoGeneratorV1:
             amount = int(random.random() * giver.balance() * 0.2)
             give_act = giver.give(amount, acker.id)
             ack_act = acker.ack(amount, giver.id)
-            give_msg = f"{(giver.id)} gave {amount} CHF to {(acker.id)}, has given {giver.given[acker.id]} CHF"
-            ack_msg = f"{(acker.id)} acked {amount} CHF from {(giver.id)}, has acked {acker.acked[giver.id]} CHF"
-            commit_give = add_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id))
-            commit_ack = add_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id))
+            give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
+            ack_msg = f"{(acker.id.decode())} acked {amount} CHF from {(giver.id.decode())}, has acked {acker.acked[giver.id]} CHF"
+            commit_give = add_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id.decode()))
+            commit_ack = add_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id.decode()))
             validate_hash(commit_give, "commit_give")
             validate_hash(commit_ack, "commit_ack")
             print(give_msg)
