@@ -1,0 +1,161 @@
+\documentclass{report}
+
+\usepackage{dirtree}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{algpseudocode}
+\usepackage{todonotes}
+
+\title{Optimization of Invariant Verification for Safe Replication of BFT-Logs}
+\author{Pascal von Fellenberg}
+\begin{document}
+\maketitle
+%\newcommand{\todo}[1]{\emph{\colorbox{Yellow}{TODO #1}}}
+\newcommand{\balance}[0]{\textit{balance}}
+\newcommand{\apply}[0]{\textit{apply}}
+\newcommand{\deltacc}[1]{#1^\delta}
+\newcommand{\id}[1]{#1_\textit{id}}
+
+\section*{Abstract}
+TODO
+
+\section{Introduction}
+TODO
+
+\section{Background}
+TODO
+
+\section{Design of Test Repository}
+
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Git Commit Field} & \textbf{Purpose} \\
+\hline
+\emph{author} & $M_{author}$ as \emph{author.name}, the \emph{author.email} is not used; \\
+\emph{commiter} & Not used; \\
+\emph{parents} & First parent is always $M_{prev}$, while the next are $M_{deps}$; \\
+\emph{message} & Contains both the $M_{payload}$ and $M_{signature}$; \\
+\emph{tree-hash} & Hash referencing the tree-object that represents the delta state. \\
+\hline
+\end{tabular}
+
+\subsection{State of the 2P-BFT-Log to Track}
+idk what to write here yet.
+
+\subsection{State of the $\delta$-GOC-Ledger to Track}
+Each individual state represents a state of an account.
+Each account stores 5 values: $A_{id}$, $A_{\uparrow}$, $A_{\downarrow}$, $A_{\rightarrow}$ and $A_{\leftarrow}$. $A_{id}$ is the account identifier and doesn't change.
+$A_{\uparrow}$ and $A_{\downarrow}$ are numbers and represent the number of created and the number of destroyed tokens respectively.
+$A_{\rightarrow}$ and $A_{\leftarrow}$ are mappings from account identifiers to numbers and represent the number of tokens given to and received (and acknowledged) from the author respectively.
+All numbers in this account are grow-only counters, meaning their value cannot decrease over time.
+
+To save space, only the attributes that changed since the last state are stored in the delta state, denoted as $A^\delta$.
+
+A Ledger is a dictionary of accounts. It maps account identifiers to account states.
+
+\subsection{Tree Objects as Delta-states}
+\label{sec:tree-obj-desc}
+Each delta state is encoded into a tree object.
+This works as follows: The tree contains all the attributes that changed as entries.
+The entries corresponding to $A_{\uparrow}$ and $A_{\downarrow}$ contain hashes to blob objects containing their respective number (number of created and destroyed tokens).
+The entries corresponding to $A_{\leftarrow}$, $A_{\rightarrow}$ contain hashes to tree objects.
+These tree objects contain entries corresponding to the authors which contain hashes to blob objects containing their respective number (number of given and acknowledged tokens).
+
+\subsection{Git Repository as Ledger}
+\begin{figure}[h!]
+    \dirtree{%
+    .1 refs/.
+    .2 heads/.
+    .3 frontier/.
+    .4 <token type>/.
+    .5 <author id>.
+    .5 ....
+    .4 ....
+    }
+    \caption{References directory in Git repository.}
+\end{figure}
+Since this is only a benchmark of the verification of commits, I don't include the references necessary for replication (remotes), the ones for checkpointing and the ones related to aliases.
+
+\section{Invariants to Check}
+
+\subsection{Invariants on delta account $\deltacc{A}$}
+The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
+$L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$.
+\begin{itemize}
+    \item date of commits from the same author must be non-decreasing when following the commits in causal order
+    \item Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$.
+    \item If $\deltacc A_\rightarrow$ is non-empty, the constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
+    \item If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $A$).
+    \item If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
+    \item If $\deltacc A_\downarrow$ is present, the constraint $L_\textit{after}[\id{\deltacc A}] \ge 0$ must hold.
+\end{itemize}
+
+\subsection{Invariants on Message $M$ and corresponding delta account $M_\textit{acc}$}
+$M_\textit{deps}$ must be the set of Message ids of the latest messages known to $M_\textit{author}$ from authors which are relevant to the transaction. Being relevant in a transaction means the following: if $M_{\textit{acc}\rightarrow}$ is defined, all the authors in $M_{\textit{acc}\rightarrow *}$ are relevant for the transaction. If $M_{\textit{acc}\leftarrow}$ is defined, all the authors in $M_{\textit{acc}\leftarrow *}$ are relevant.
+
+\subsection{Invariants Message $M$ inherited from 2P-BFT-Log}
+\begin{enumerate}
+    \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \texttt{MsgId}(M'): M' \text{exists and is valid.}$
+    \item [M2] \emph{(single author)}: if $M_\textit{prev} = \texttt{MsgId}(M')$ then $M'_\textit{author} = M_\textit{author}$.
+    \item [M3] \emph{(valid external dependencies)}: for all $\textit{msgId} \in M_\textit{deps}$, there exists a valid $M'$ such that $\textit{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} \neq M_\textit{author}$.
+    \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, there exists at most one $\textit{msgId} \in M_\textit{deps}$, such that $\texttt{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} = \textit{author}$.
+    \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$.
+    \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
+\end{enumerate}
+Validity properties if log $L$ is in growing phase:
+\begin{enumerate}
+    \item [CL1] \emph{(no forks)}: $L_\textit{forks} = \emptyset$.
+    \item [CL2] \emph{(valid last message)}: if $L_\textit{last} = M \neq \bot$ then $M$ is valid.
+    \item [CL3] \emph{(consistent previous author)}: if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
+\end{enumerate}
+Validity properties if log $L$ is in shrinking phase:
+\begin{enumerate}
+    \item [FL1] \emph{(non-empty forks)}: $L_\textit{forks} \neq \emptyset$.
+    \item [FL2] \emph{(valid last message)}: same as CL2.
+    \item [FL3] \emph{(consistent previouse author)}: same as CL3.
+    \item [FL4] \emph{(valid forks)}: for all $M \in L_\textit{forks}$, $M$ is valid.
+    \item [FL5] \emph{(consistent fork author)}: for all $M \in L_\textit{forks}$, $L_\textit{author} = M_\textit{author}$ and if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
+    \item [FL6] \emph{(valid proof)}: if $M \in L_\textit{forks}$ then $\exists M' \in L_\textit{forks}$ such that $M \neq M'$ and $M_\textit{prev} = M'_\textit{prev}$.
+    \item [FL7] \emph{(consistent proof)}: for all $M \in L_\textit{forks}$, $L_\textit{last} = M_\textit{prev}$.
+\end{enumerate}
+
+
+\subsection{Validity Invariants Concerning Git Objects}
+\begin{itemize}
+    \item all the referenced git objects must exist
+    \item the tree objects must be of the structure described in Section \ref{sec:tree-obj-desc}
+    \item committer and author must be equal\footnote{therefore when a property must hold for the author, it must also hold for the committer}
+    \item blob objects representing numbers must contain integers as bytes, with no leading zero bytes
+    \item email of author must be of format \texttt{<id>@gitgen.com}
+    \item id in the email must match the name of the author
+    \item ...
+\end{itemize}
+
+\section{Verification Algorithm (GOC-Ledger Invariants)}
+\begin{algorithmic}[1]
+\Function{verify\_log}{set of Log Messages: $\mathcal M$}
+\State $S \gets \emptyset$ \Comment{This is a dictionary with default value $\emptyset$ on access}
+\State $R \gets \langle\rangle$ \Comment{This variable will contain the ids of all valid messages}
+\ForAll{$M \in \mathcal{M}$ in any topological order}
+    \State $L_\textit{before} \gets \bigsqcup_{L \in S[\id{M}]} L$
+    \State $S[\id{M}] \gets \emptyset$
+    \State $L_\textit{after} \gets \Call{apply}{M_\textit{acc}, L_\textit{before}}$
+    \If{$\Call{account\_valid}{L_\textit{before}, L_\textit{after}, M}$}
+        \State $R \gets R \| \langle M \rangle$
+    \EndIf
+    \State $L_M \gets L_\textit{after}$
+    \ForAll{$\id{C} \in \Call{children\_ids}{M}$}
+        \State $S[\id{C}] \gets S[\id{C}] \cup \{L_M\}$
+    \EndFor
+\EndFor
+\Return R
+\EndFunction
+\end{algorithmic}
+\todo{Implement APPLY function in pseudocode}
+\todo{borrow notation from Heisch's Master Thesis}
+
+
+
+
+\end{document}

@@ -14,3 +14,8 @@ db/
 .vscode/
 **/*.stats
 
+# LaTeX-generated files
+*.aux
+*.pdf
+*.log
+
