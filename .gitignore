@@ -12,3 +12,5 @@ wheels/
 # custom stuff
 db/
 .vscode/
+**/*.stats
+
