@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 generate = "verify_goc_ledger:generate_repo"
 verify_git_cli = "verify_goc_ledger:verify_repo_git_cli"
+generate_testcases = "verify_goc_ledger:tests.gen_testcases.main"
 
 [build-system]
 requires = ["uv_build>=0.9.12,<0.10.0"]

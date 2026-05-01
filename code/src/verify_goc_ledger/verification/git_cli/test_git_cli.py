@@ -284,8 +284,11 @@ class GitCliGocVerifier:
         return result
 
 def main():
+    # TODO add command line option to specify whether or not to profile
+    # TODO add command line option to specify whether or not to 
+    #      generate file of verified commits (for correctness testing) 
+    #      and implement said functionality
     try:
-        # this is a global variable, very bad practice indeed!
         git_path = sys.argv[1]
     except:
         print(usage_str)

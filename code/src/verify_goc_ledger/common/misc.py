@@ -1,6 +1,7 @@
 import os
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Tuple
 
 human_names_list = ["alice", "bob", "carol", "dean", "ethan", "felicity", "garreth", "hugh", "illiani", "jace", "kevin", "lance", "marina", "neil", "ondine", "peregrin", "quade", "shane", "tristan", "udelia", "vigo", "waverly", "xavier", "yasmine", "zoe"]
@@ -58,3 +59,9 @@ def validate_hash(hash: str, hashname: str | None = None, throw=True):
             else:
                 print(msg)
             return False
+
+def write_verification_output(test_dir: Path, valid: list[bytes], invalid: list[bytes], prefix: str = ""):
+    with open(test_dir/(prefix + "valid.txt"), "w+") as valid_file:
+        valid_file.writelines(map(lambda x: x.decode() + "\n", valid))
+    with open(test_dir/(prefix + "invalid.txt"), "w+") as invalid_file:
+        invalid_file.writelines(map(lambda x: x.decode() + "\n", invalid))

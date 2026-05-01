@@ -83,36 +83,20 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
     global date
 
     tree_account = []
-    if acc.created > 0:
-        created_hash = repo.create_blob(int_to_bytes(acc.created))
-        validate_hash(created_hash.decode(), "created_hash")
-        tree_account.append(("blob", created_hash.decode(), "account/created"))
-    if acc.destroyed > 0:
-        destroyed_hash = repo.create_blob(int_to_bytes(acc.destroyed))
-        validate_hash(destroyed_hash.decode(), "destroyed_hash")
-        tree_account.append(("blob", destroyed_hash.decode(), "account/destroyed"))
 
-    if acc.given: # if given non-empty
-        tree_given = []
-        for account_id, num in acc.given.items():
-            given_hash = repo.create_blob(int_to_bytes(num))
-            validate_hash(given_hash.decode(), "given_hash")
-            tree_given.append(("blob", given_hash.decode(), "account/given/" + account_id.decode()))
-        tree_given_hash = repo.create_tree(tree_given, "account/given")
-        validate_hash(tree_given_hash.decode(), "tree_given_hash")
-        tree_account.append(("tree", tree_given_hash.decode(), "account/given"))
+    created = acc.created
+    destroyed = acc.destroyed
+    acked = acc.acked
+    given = acc.given
+    if created == 0:
+        created = None
+    if destroyed == 0:
+        destroyed = None
+    if not acked:
+        acked = None
+    if not given:
+        given = None
 
-    if acc.acked: # if acked non-empty
-        tree_acked = []
-        for account_id, num in acc.acked.items():
-            acked_hash = repo.create_blob(int_to_bytes(num))
-            validate_hash(acked_hash.decode(), "acked_hash")
-            tree_acked.append(("blob", acked_hash.decode(), "account/acked/" + account_id.decode()))
-        tree_acked_hash = repo.create_tree(tree_acked, "account/acked")
-        validate_hash(tree_acked_hash.decode(), "tree_acked_hash")
-        tree_account.append(("tree", tree_acked_hash.decode(), "acked"))
-
-    tree_hash = repo.create_tree(tree_account, "account")
     ref_prefix = "refs/heads/frontier/" + token_type + "/"
     previous = repo.show_ref(ref_prefix + acc.id.decode())
     assert len(previous) <= 1
@@ -127,8 +111,47 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
         if previous[0] in deps:
             raise Exception("previous commit in pars")
         parents = previous + deps
-    commit_hash = repo.create_commit(tree_hash.decode(), parents, acc.id.decode(), msg, date=f"{date} +0100").decode()
+    date += 1
+    return add_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given, token_type)
+
+def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, token_type: str = "CHF"):
+    """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
+    tree_account = []
+    if created is not None:
+        created_hash = repo.create_blob(int_to_bytes(created))
+        validate_hash(created_hash.decode(), "created_hash")
+        tree_account.append(("blob", created_hash.decode(), "account/created"))
+    if destroyed is not None:
+        destroyed_hash = repo.create_blob(int_to_bytes(destroyed))
+        validate_hash(destroyed_hash.decode(), "destroyed_hash")
+        tree_account.append(("blob", destroyed_hash.decode(), "account/destroyed"))
+
+    if given is not None: # if given non-empty
+        tree_given = []
+        for account_id, num in given.items():
+            given_hash = repo.create_blob(int_to_bytes(num))
+            validate_hash(given_hash.decode(), "given_hash")
+            tree_given.append(("blob", given_hash.decode(), "account/given/" + account_id.decode()))
+        tree_given_hash = repo.create_tree(tree_given, "account/given")
+        validate_hash(tree_given_hash.decode(), "tree_given_hash")
+        tree_account.append(("tree", tree_given_hash.decode(), "account/given"))
+
+    if acked is not None: # if acked non-empty
+        tree_acked = []
+        for account_id, num in acked.items():
+            acked_hash = repo.create_blob(int_to_bytes(num))
+            validate_hash(acked_hash.decode(), "acked_hash")
+            tree_acked.append(("blob", acked_hash.decode(), "account/acked/" + account_id.decode()))
+        tree_acked_hash = repo.create_tree(tree_acked, "account/acked")
+        validate_hash(tree_acked_hash.decode(), "tree_acked_hash")
+        tree_account.append(("tree", tree_acked_hash.decode(), "acked"))
+
+    tree_hash = repo.create_tree(tree_account, "account")
+    ref_prefix = "refs/heads/frontier/" + token_type + "/"
+    commit_hash = repo.create_commit(tree_hash.decode(), deps, author, msg, date=f"{date} +0100").decode()
     repo.reset_index()
     date += 1
-    repo.update_ref(ref_prefix + acc.id.decode(), commit_hash)
+    repo.update_ref(ref_prefix + author, commit_hash)
     return commit_hash
+
+    
