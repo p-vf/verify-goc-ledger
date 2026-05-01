@@ -24,7 +24,7 @@ def run_cmd(cmd: str | list[str], cwd: str = ".", env=None) -> bytes:
     # if proc.returncode == 1:
     #     return res
     if proc.returncode != 0:
-        raise Exception(f"subprocess terminated with non-zero exit code. cmd:\n{cmd if isinstance(cmd, str) else shlex.join(cmd)}\ncwd: {cwd}")
+        raise Exception(f"subprocess terminated with non-zero ({proc.returncode}) exit code. cmd:\n{cmd if isinstance(cmd, str) else shlex.join(cmd)}\ncwd: {cwd}")
     return res
 
 def int_to_bytes(x: int) -> bytes:

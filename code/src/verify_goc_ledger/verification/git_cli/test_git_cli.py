@@ -44,17 +44,17 @@ def parse_tree(id, t: bytes):
     return Tree(id, children)
 
 class GitCliGocVerifier:
-    def __init__(self, git_path):
+    def __init__(self, git_path: str):
         self.git_path = git_path
-        self._commit_cache = {}
-        self._obj_cache = {}
-        self._frontier = {}
-        self._ledger = {}
+        self._commit_cache: dict[bytes, Commit] = {}
+        self._obj_cache: dict[bytes, tuple[int, bool]] = {}
+        self._valid_frontier: dict[bytes, Commit] = {}
+        self._ledger: dict[bytes, Account] = {}
     
     def verify(self):
         self._commit_cache = {}
         self._obj_cache = {}
-        self._frontier = {}
+        self._valid_frontier = {}
         self._ledger = {}
     
         # TODO signing should also be taken into consideration
@@ -68,19 +68,31 @@ class GitCliGocVerifier:
             delta_acc, err = self.get_delta_acc(commit)
             tmp = self.verify_delta_acc(delta_acc, commit)
             err += tmp
-            # print(delta_acc)
-            # msg += verify_delta_account(delta_acc, ledger)
-            update_frontier(commit, self._frontier)
-            update_ledger(delta_acc, self._ledger)
-            # print("====== LEDGER START ======")
-            # for account in ledger.values():
-            #     print(account)
-            # print(" ====== LEDGER END ======")
-            if msg: print("failed assertions while parsing commit:", msg)
-            if err: print("failed assertions while parsing tree of commit:", err)
+            if len(err) == 0:
+                if not self.check_if_already_verified(commit.parents):
+                    err.append("a parent of commit is not valid")
+            
+            if not (msg or err):
+                update_frontier(commit, self._valid_frontier)
+                update_ledger(delta_acc, self._ledger)
+                run_cmd(f"git update-ref refs/heads/validated/{delta_acc.id.decode()} {commit.id.decode()}", cwd=self.git_path)
+            if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
+            if err: print(f"failed assertions while parsing tree of commit {commit.id.decode()}:", err)
         
         for account in self._ledger.values():
             print(repr(account))
+    
+    def check_if_already_verified(self, commit_ids):
+        frontier_commit_ids = set(map(lambda x: x.id, self._valid_frontier.values()))
+        for c in commit_ids:
+            if c not in frontier_commit_ids:
+                # here we print all the commits that are reachable from c through parent-child edges 
+                #   and are reachable from any frontier commit through child-parent edges
+                # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
+                result = run_cmd(f"git rev-list --ancestry-path={c.decode()} ^{c.decode()} {bytes.join(b" ", frontier_commit_ids).decode()}", cwd=self.git_path)
+                if result == b"":
+                    return False
+        return True
     
     def verify_commit(self, c):
         res = []
@@ -98,7 +110,7 @@ class GitCliGocVerifier:
                 res.append(f"author name and prefix of email don't match: author name: {name}, email: {email}")
             if email_suffix != b"gitgen.com":
                 res.append(f"email doesn't have the correct suffix (expected 'gitgen.com'): {email_suffix}")
-            
+        
         parent_authors = set()
         first = True
         # print(f"commit {c.id} has following parents:")
@@ -112,17 +124,17 @@ class GitCliGocVerifier:
                 str_p = run_cmd(f"git log --format={commit_format} -n 1 {p.decode()}", cwd=self.git_path)
                 parent = parse_commit(str_p)
             if first and parent.author_name != name:
-                res.append(f"first parent {parent.id} of commit {c.id} does not have the same author")
+                res.append(f"first parent {parent.id} does not have the same author")
             first = False
             p_name = parent.author_name
             # verify that each author is in the parent commits at most once
             if p_name in parent_authors:
-                res.append(f"author {p_name} appears more than once in the parents of commit {c.id}")
+                res.append(f"author {p_name} appears more than once in the parents")
             parent_authors.add(p_name)
         
         # Monotonicity of commit dates of same author
-        if name in self._frontier:
-            last_time = int(self._frontier[name].author_date)
+        if name in self._valid_frontier:
+            last_time = int(self._valid_frontier[name].author_date)
             if last_time > int(c.author_date):
                 res.append(f"author date is not non-decreasing: commit-time of causally older commit: {last_time}, commit-time of causally newer commit: {c.author_date}")
         
@@ -171,6 +183,7 @@ class GitCliGocVerifier:
         return res
     
     def recreate_ledger(self, commit_ids: list[bytes]):
+        # TODO use --first-parent to only include the relevant authors into the log!
         ledger = {}
         # TODO only allow verified commits
         relevant_commit_ids = run_cmd(f"git rev-list {bytes.join(b" ", commit_ids).decode()}", cwd=self.git_path).splitlines()
