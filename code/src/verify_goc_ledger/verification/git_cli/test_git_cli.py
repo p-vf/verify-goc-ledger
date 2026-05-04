@@ -161,10 +161,15 @@ class GitCliGocVerifier:
             has_acked = True
         if a.given:
             has_given = True
-        if not (has_given or has_acked or has_destroyed):
-            return []
-        l = self.recreate_ledger(commit.parents)
-        old_acc = l[a.id]
+        if not (has_given or has_acked or has_destroyed or has_created):
+            return ["empty delta state"]
+        if len(commit.parents) == 0:
+            l = {}
+            old_acc = Account(commit.author_name)
+        else:
+            l = self.recreate_ledger(commit.parents)
+            old_acc = l[a.id]
+        
         if len(commit.parents) > 0:
             iterator = iter(map(self.get_commit, commit.parents))
             first_parent = next(iterator)
@@ -172,10 +177,19 @@ class GitCliGocVerifier:
             if first_parent.author_name != a.id:
                 res.append("author of first parent not the same as author")
             # === Relevantness of dependencies checks ===
+            authors_in_deps = set()
             for c in iterator:
                 if c.author_name not in a.acked \
                     and c.author_name not in a.given:
                         res.append(f"dependency {c.id.decode()} not relevant")
+                authors_in_deps.add(c.author_name)
+            # === Necessary dependencies checks ===
+            for author in a.acked:
+                if author not in authors_in_deps:
+                    res.append(f"necessary dependency for author {author} missing (acked)")
+            for author in a.given:
+                if author not in authors_in_deps:
+                    res.append(f"necessary dependency for author {author} missing (given)")
 
         # === Minimality of delta state checks Part 2 ===
         if has_destroyed:
@@ -206,11 +220,12 @@ class GitCliGocVerifier:
         # === Valid acknowledgements check ===
         if has_acked:
             for author, amount in a.acked.items():
-                if l[author].given[a.id] < amount:
+                if a.id not in l[author].given or l[author].given[a.id] < amount:
                     res.append(f"author {a.id} wasn't given the money they acked from {author}")
         return res
     
     def recreate_ledger(self, commit_ids: list[bytes]) -> dict[bytes, Account]:
+        assert len(commit_ids) > 0
         # TODO use --first-parent to only include the relevant authors into the log!
         ledger = {}
         # TODO only allow verified commits
