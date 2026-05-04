@@ -9,7 +9,7 @@ sys.path.insert(0, str(parent_folder))
 
 from common.misc import run_cmd, validate_hash, generate_human_names
 from common.account import Account
-from git_utils import Repo, add_as_commit
+from common.git_utils import Repo, add_as_commit
 
 class ValidRepoGeneratorV1:
     def __init__(self, repo_dir: Path, num_commits: int, num_users: int, seed: str="hello", sign: bool = True):

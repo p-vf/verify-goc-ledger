@@ -32,7 +32,9 @@ def main():
                     verify_repo(str(test_dir_full / e), False, True)
         except Exception as e:
             import traceback
-            print(f"exception raised: \n{str.join("", traceback.format_tb(e.__traceback__))}")
+            print(f"exception raised: \n{bcolors.FAIL + str.join("", traceback.format_tb(e.__traceback__)) + bcolors.ENDC}")
+            if len(e.args) > 0:
+                print(f"exception message: \n{bcolors.WARNING + e.args[0] + bcolors.ENDC}")
             no_failed_testcases += 1
             continue
 

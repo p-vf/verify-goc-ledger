@@ -4,6 +4,7 @@ import shutil
 import sys
 
 from pathlib import Path
+from typing import Sequence
 parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
@@ -11,9 +12,10 @@ from common.misc import run_cmd, validate_hash, int_to_bytes
 from common.account import Account
 
 class Repo:
-    def __init__(self, repo_dir=".", keydir: Path | None = None):
+    def __init__(self, git_path=".", keydir: Path | None = None, commit_format: str = "%H"):
+        self.commit_format = commit_format
         self.keydir = keydir
-        self.repo_dir = repo_dir
+        self.git_path = git_path
 
     def create_commit(self, tree: str, parents: list[str], author_name: str, message: str|None =None, date: str|None =None):
         if message is None:
@@ -35,21 +37,18 @@ class Repo:
         env["GIT_AUTHOR_EMAIL"] = author_name + "@gitgen.com"
         env["GIT_COMMITTER_NAME"] = author_name
         env["GIT_COMMITTER_EMAIL"] = author_name + "@gitgen.com"
-        return run_cmd(cmd, self.repo_dir, env)[:-1]
+        return run_cmd(cmd, self.git_path, env)[:-1]
 
     def create_blob(self, data: bytes):
         """returns hash of created object"""
-        proc = subprocess.Popen("git hash-object --stdin -w", cwd=self.repo_dir, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
+        proc = subprocess.Popen("git hash-object --stdin -w", cwd=self.git_path, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
         res = bytes.strip(proc.communicate(input=data)[0])
         #print(run_cmd(f"git cat-file blob {res.decode()}", self.repo_dir))
         return res
 
-    def read_blob(self, hash: str):
-        return run_cmd(f"git show {hash}", self.repo_dir)
-
     def create_repo(self):
-        run_cmd(f"git init {self.repo_dir}")
-        run_cmd("git config gpg.format ssh", cwd=self.repo_dir)
+        run_cmd(f"git init {self.git_path}")
+        run_cmd("git config gpg.format ssh", cwd=self.git_path)
 
     def create_tree(self, type_hash_name: list[tuple[str, str, str]], name):
         # TODO this function is a bad interface to the user. maybe use PyGit2's Treebuilder instead
@@ -59,21 +58,51 @@ class Repo:
                 continue # maybe check that the tree object exists here
             cmd = f"git update-index --add --cacheinfo 100644 {h} {n}"
         #    print(cmd)
-            run_cmd(cmd, self.repo_dir)
-        res = bytes.strip(run_cmd(f"git write-tree --prefix={name}/", self.repo_dir))
+            run_cmd(cmd, self.git_path)
+        res = bytes.strip(run_cmd(f"git write-tree --prefix={name}/", self.git_path))
         # print(f"created tree {res.decode()}")
         return res
 
     def reset_index(self):
-        run_cmd("git rm --cached -r .", self.repo_dir)
+        run_cmd("git rm --cached -r .", self.git_path)
 
     def show_ref(self, ref: str):
-        res = run_cmd(f"git for-each-ref '--format=%(objectname)' {ref}", self.repo_dir).decode().splitlines()
+        res = run_cmd(f"git for-each-ref '--format=%(objectname)' {ref}", self.git_path).decode().splitlines()
         #print(f"ref {ref} resulted in {res}")
         return res
 
     def update_ref(self, ref: str, hash: str):
-        return run_cmd(f"git update-ref {ref} {hash}", self.repo_dir).decode().splitlines()
+        return run_cmd(f"git update-ref {ref} {hash}", self.git_path).decode().splitlines()
+    
+    def retrieve_all_commits_reverse_topo_order(self):
+        format_str = "--format=" + self.commit_format + " "
+        commits = run_cmd(f"git log --all {format_str}--reverse --topo-order", cwd=self.git_path)
+        return commits
+    
+    def retrieve_reachable_commits(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):
+        if len(not_from_commits) == 0:
+            not_args = ""
+        else:
+            not_args = f" ^{str.join(" ^", not_from_commits)}"
+        return run_cmd(f"git rev-list {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
+    
+    def retrieve_single_commit(self, commit_id: str):
+        return run_cmd(f"git show --format={self.commit_format} {commit_id}")
+    
+    def retrieve_tree(self, tree_id: str):
+        return run_cmd(f"git ls-tree {tree_id}", self.git_path)
+    
+    def read_blob(self, blob_id: str):
+        return run_cmd(f"git cat-file -p {blob_id}", self.git_path)
+    
+    def is_reachable(self, commit: str, from_commits: list[str]):
+        if commit in from_commits:
+            return True
+        # here we print all the commits that are reachable from c through parent-child edges 
+        #   and are reachable from any commit in `from_commits` through child-parent edges
+        # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
+        result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits)}", cwd=self.git_path)
+        return result != b""
 
 date = 1774010000
 

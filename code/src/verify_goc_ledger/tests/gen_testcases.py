@@ -1,6 +1,6 @@
 from pathlib import Path
 import os
-from git_utils import Repo, add_as_commit_plumbing
+from common.git_utils import Repo, add_as_commit_plumbing
 from common.misc import generate_human_names, write_verification_output
 import sys
 import shutil

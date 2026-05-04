@@ -5,6 +5,8 @@ import time
 from typing import Tuple
 
 from pathlib import Path
+
+from common.git_utils import Repo
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
@@ -45,20 +47,22 @@ def parse_tree(id, t: bytes):
 
 class GitCliGocVerifier:
     def __init__(self, git_path: str):
-        self.git_path = git_path
+        self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
         self._valid_frontier: dict[bytes, Commit] = {}
         self._ledger: dict[bytes, Account] = {}
     
-    def verify(self):
+    def verify(self, generate_profile_files: bool = False):
         self._commit_cache = {}
         self._obj_cache = {}
         self._valid_frontier = {}
         self._ledger = {}
     
-        # TODO signing should also be taken into consideration
-        commits = run_cmd(f"git log --all --format={commit_format} --reverse --topo-order", cwd=self.git_path)
+        if generate_profile_files:
+            self._performance_data = {}
+    
+        commits = self.repo.retrieve_all_commits_reverse_topo_order()
         for c in commits.splitlines():
             if len(c) == 0: # this happens because the end of the message body always has an additional newline appended
                 continue
@@ -75,7 +79,7 @@ class GitCliGocVerifier:
             if not (msg or err):
                 update_frontier(commit, self._valid_frontier)
                 update_ledger(delta_acc, self._ledger)
-                run_cmd(f"git update-ref refs/heads/validated/{delta_acc.id.decode()} {commit.id.decode()}", cwd=self.git_path)
+                self.repo.update_ref("refs/heads/validated/" + delta_acc.id.decode(), commit.id.decode())
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
             if err: print(f"failed assertions while parsing tree of commit {commit.id.decode()}:", err)
         
@@ -85,13 +89,8 @@ class GitCliGocVerifier:
     def check_if_already_verified(self, commit_ids):
         frontier_commit_ids = set(map(lambda x: x.id, self._valid_frontier.values()))
         for c in commit_ids:
-            if c not in frontier_commit_ids:
-                # here we print all the commits that are reachable from c through parent-child edges 
-                #   and are reachable from any frontier commit through child-parent edges
-                # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
-                result = run_cmd(f"git rev-list -n 1 --ancestry-path={c.decode()} ^{c.decode()} {bytes.join(b" ", frontier_commit_ids).decode()}", cwd=self.git_path)
-                if result == b"":
-                    return False
+            if not self.repo.is_reachable(c.decode(), list(map(lambda x: x.decode(), frontier_commit_ids))):
+                return False
         return True
     
     def verify_commit(self, c):
@@ -229,7 +228,7 @@ class GitCliGocVerifier:
         # TODO use --first-parent to only include the relevant authors into the log!
         ledger = {}
         # TODO only allow verified commits
-        relevant_commit_ids = run_cmd(f"git rev-list {bytes.join(b" ", commit_ids).decode()}", cwd=self.git_path).splitlines()
+        relevant_commit_ids = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), commit_ids)))
         for commit_id in relevant_commit_ids:
             commit = self.get_commit(commit_id)
             a, _ = self.get_delta_acc(commit)
@@ -240,7 +239,7 @@ class GitCliGocVerifier:
     def get_commit(self, oid: bytes) -> Commit:
         if oid in self._commit_cache:
             return self._commit_cache[oid]
-        c = parse_commit(run_cmd(f"git log --format={commit_format} -n 1 {oid.decode()}", cwd=self.git_path))
+        c = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
         self._commit_cache[oid] = c
         return c
     
@@ -249,7 +248,7 @@ class GitCliGocVerifier:
         a = Account(commit.author_name)
         res = []
         id = commit.tree
-        new_tree = parse_tree(id, run_cmd(f"git ls-tree {id.decode()}", self.git_path))
+        new_tree = self.retrieve_and_parse_tree(id)
         # === Minimality of delta state checks Part 1 ===
         for child in new_tree.children:
             minimal_bytes = True
@@ -265,7 +264,7 @@ class GitCliGocVerifier:
                 res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
             if child.name == b"acked":
                 at_least_one_entry = False
-                for entry in parse_tree(child.id, run_cmd(f"git ls-tree {child.id.decode()}", self.git_path)).children:
+                for entry in self.retrieve_and_parse_tree(child.id).children:
                     assert entry.name is not None
                     a.acked[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
                     at_least_one_entry = True
@@ -277,7 +276,7 @@ class GitCliGocVerifier:
                     res.append("unnecessary field 'acked' (empty mapping)")
             if child.name == b"given":
                 at_least_one_entry = False
-                for entry in parse_tree(child.id, run_cmd(f"git ls-tree {child.id.decode()}", self.git_path)).children:
+                for entry in self.retrieve_and_parse_tree(child.id).children:
                     assert entry.name is not None
                     a.given[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
                     at_least_one_entry = True
@@ -289,23 +288,27 @@ class GitCliGocVerifier:
                     res.append("unnecessary field 'given' (empty mapping)")
         return a, res
     
+    def retrieve_and_parse_tree(self, tree_id: bytes):
+        t = self.repo.retrieve_tree(tree_id.decode())
+        return parse_tree(tree_id, t)
+    
     def obj_cache_lookup(self, id: bytes) -> Tuple[int, bool]:
         # TODO the boolean value may be unnecessary. can be computed on the fly quite efficiently
         if id in self._obj_cache:
             return self._obj_cache[id]
         else:
-            result = int_from_bytes(run_cmd(f"git cat-file -p {id.decode()}", self.git_path))
+            result = int_from_bytes(self.repo.read_blob(id.decode()))
             self._obj_cache[id] = result
         return result
     
     def generate_report_files(self):
-        valid_refs = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/validated/*", self.git_path).splitlines()
-        frontier = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/frontier/CHF/*", self.git_path).splitlines()
+        valid_refs = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/validated/*", self.repo.git_path).splitlines()
+        frontier = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/frontier/CHF/*", self.repo.git_path).splitlines()
         if len(valid_refs) == 0:
             raise NotImplementedError("empty valid_refs not handled")
-        valid = run_cmd(f"git rev-list {bytes.join(b" ", valid_refs).decode()}", self.git_path).splitlines()
-        invalid = run_cmd(f"git rev-list {bytes.join(b" ", frontier).decode()} ^{bytes.join(b" ^", valid_refs).decode()}", self.git_path).splitlines()
-        write_verification_output(Path(self.git_path).parent, valid, invalid)
+        valid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), valid_refs)))
+        invalid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
+        write_verification_output(Path(self.repo.git_path).parent, valid, invalid)
 
 def verify_repo(git_path: str, profile: bool, generate_report_files: bool):
     g = GitCliGocVerifier(git_path)
