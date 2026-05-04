@@ -9,7 +9,7 @@ parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
 from common.account import Account, Ledger, update_ledger
-from common.misc import int_from_bytes, run_cmd
+from common.misc import int_from_bytes, run_cmd, write_verification_output
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
@@ -282,6 +282,27 @@ class GitCliGocVerifier:
             result = int_from_bytes(run_cmd(f"git cat-file -p {id.decode()}", self.git_path))
             self._obj_cache[id] = result
         return result
+    
+    def generate_report_files(self):
+        valid_refs = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/validated/*", self.git_path).splitlines()
+        frontier = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/frontier/CHF/*", self.git_path).splitlines()
+        if len(valid_refs) == 0:
+            raise NotImplementedError("empty valid_refs not handled")
+        valid = run_cmd(f"git rev-list {bytes.join(b" ", valid_refs).decode()}", self.git_path).splitlines()
+        invalid = run_cmd(f"git rev-list {bytes.join(b" ", frontier).decode()} ^{bytes.join(b" ^", valid_refs).decode()}", self.git_path).splitlines()
+        write_verification_output(Path(self.git_path).parent, valid, invalid)
+
+def verify_repo(git_path: str, profile: bool, generate_report_files: bool):
+    g = GitCliGocVerifier(git_path)
+    if profile:
+        cProfile.runctx("g.verify()", {}, {"g": g}, "./git-cli.stats")
+        print("statistics saved to ./git-cli.stats")
+    else:
+        start_time = time.perf_counter_ns()
+        g.verify()
+        print(f"running time: {(time.perf_counter_ns() - start_time) / 1_000_000_000} s")
+    if generate_report_files:
+        g.generate_report_files()
 
 def main():
     # TODO add command line option to specify whether or not to profile
@@ -299,15 +320,8 @@ def main():
         print("cwd:", os.getcwd())
         exit(2)
     profile = False
-    if profile:
-        cProfile.runctx("g.verify()", {}, {"g": GitCliGocVerifier(git_path)}, "./git-cli.stats")
-        print("statistics saved to ./git-cli.stats")
-    else:
-        g = GitCliGocVerifier(git_path)
-        start_time = time.perf_counter_ns()
-        g.verify()
-        print(f"running time: {(time.perf_counter_ns() - start_time) / 1_000_000_000} s")
+    generate_report_files = True
+    verify_repo(git_path, profile, generate_report_files)
 
 if __name__ == "__main__":
     main()
-        

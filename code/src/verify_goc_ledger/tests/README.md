@@ -16,4 +16,4 @@ testcases
 :   └── ...
 :
 ```
-In the two text files `expected_valid.txt` and `expected_invalid.txt`, the commit hashes corresponding to commits are listed which are valid and invalid respectively (separated by a newline character). These commits are ordered by date, descending (as git log would list them). The last requirement is so that we can compare the output of the verifier easily with the `diff` command.
+In the two text files `expected_valid.txt` and `expected_invalid.txt`, the commit hashes corresponding to commits are listed which are valid and invalid respectively (separated by a newline character). These commit hashes are lexicographically ordered. 

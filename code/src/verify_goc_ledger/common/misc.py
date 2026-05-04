@@ -61,7 +61,26 @@ def validate_hash(hash: str, hashname: str | None = None, throw=True):
             return False
 
 def write_verification_output(test_dir: Path, valid: list[bytes], invalid: list[bytes], prefix: str = ""):
+    for v in valid:
+        if v in invalid:
+            raise Exception(f"Testcase invalid: commit {v} is in both valid and invalid list")
     with open(test_dir/(prefix + "valid.txt"), "w+") as valid_file:
-        valid_file.writelines(map(lambda x: x.decode() + "\n", valid))
+        valid_file.writelines(map(lambda x: x.decode() + "\n", sorted(valid)))
     with open(test_dir/(prefix + "invalid.txt"), "w+") as invalid_file:
-        invalid_file.writelines(map(lambda x: x.decode() + "\n", invalid))
+        invalid_file.writelines(map(lambda x: x.decode() + "\n", sorted(invalid)))
+
+
+# Source - https://stackoverflow.com/a/287944
+# Posted by joeld, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-05-04, License - CC BY-SA 4.0
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
