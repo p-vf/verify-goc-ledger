@@ -76,9 +76,6 @@ class GitCliGocVerifier:
             delta_acc, err = self.get_delta_acc(commit)
             tmp = self.verify_delta_acc(delta_acc, commit)
             err += tmp
-            if len(err) == 0:
-                if not self.check_if_already_verified(commit.parents):
-                    err.append("a parent of commit is not valid")
             
             if not (msg or err):
                 update_frontier(commit, self._valid_frontier)
@@ -128,13 +125,13 @@ class GitCliGocVerifier:
                 return False
         return True
     
-    def verify_commit(self, c):
+    def verify_commit(self, c: Commit):
         res = []
         name = c.author_name
         email = c.author_email
         if not c.author_committer_equal():
             res.append("author and committer not equal")
-        email_split = email.split(b"@")
+        email_split = email.split(b"@", 1)
         if len(email_split) != 2:
             res.append(f"email has invalid format: {email}")
         else:
@@ -205,17 +202,23 @@ class GitCliGocVerifier:
             old_acc = l[a.id]
         
         if len(commit.parents) > 0:
-            iterator = iter(map(self.get_commit, commit.parents))
-            first_parent = next(iterator)
-            # === Single author check === (TODO maybe move this to a part of the code responsible for checking 2P-BFT-Log invariants)
+            # === Valid external dependencies (2P-BFT-Log) ===
+            if not self.check_if_already_verified(commit.parents):
+                res.append("a parent of commit is not valid")
+            parent_iterator = iter(map(self.get_commit, commit.parents))
+            first_parent = next(parent_iterator)
+            # === Single author check (2P-BFT-Log) ===
             if first_parent.author_name != a.id:
                 res.append("author of first parent not the same as author")
-            # === Relevantness of dependencies checks ===
             authors_in_deps = set()
-            for c in iterator:
+            for c in parent_iterator:
+                # === Relevantness of dependencies check ===
                 if c.author_name not in a.acked \
                     and c.author_name not in a.given:
                         res.append(f"dependency {c.id.decode()} not relevant")
+                # === Single author dependencies check (2P-BFT-Log) ===
+                if c.author_name in authors_in_deps:
+                    res.append(f"author {c.author_name} appears more than once in the dependencies")
                 authors_in_deps.add(c.author_name)
             # === Necessary dependencies checks ===
             for author in a.acked:
