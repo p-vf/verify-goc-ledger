@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 from common.git_utils import Repo, add_as_commit_plumbing
-from common.misc import generate_human_names, write_verification_output
+from common.misc import generate_human_names, write_verification_output_expected
 import sys
 import shutil
 
@@ -14,7 +14,6 @@ def main():
 
     if "reset" in sys.argv:
         shutil.rmtree("./testcases/")
-    
 
     generate_testcase1()
     generate_testcase2()
@@ -26,6 +25,7 @@ def main():
     generate_testcase8()
     generate_testcase9()
     #generate_testcase10() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
+    generate_testcase11()
 
 def generate_testcase1():
     test_dir = Path("./testcases/relevant_dependencies")
@@ -44,7 +44,7 @@ def generate_testcase1():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase2():
     test_dir = Path("./testcases/delta_state_minimality_1")
@@ -64,7 +64,7 @@ def generate_testcase2():
     valid_commits = [b1]
     invalid_commits = [a1, c1]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase3():
     test_dir = Path("./testcases/delta_state_minimality_2")
@@ -91,7 +91,7 @@ def generate_testcase3():
     valid_commits = [a1, b1, c1, d1, b2, a2]
     invalid_commits = [b3, a3, c2, d2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
     
 def generate_testcase4():
     test_dir = Path("./testcases/delta_state_valid_acks")
@@ -112,7 +112,7 @@ def generate_testcase4():
     valid_commits = [a1, b1, b2]
     invalid_commits = [b3, a2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase5():
     test_dir = Path("./testcases/delta_state_non_negative_balance_giving")
@@ -131,7 +131,7 @@ def generate_testcase5():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase6():
     # TODO maybe add more complicated testcase to check if balance gets calculated correctly or smthn
@@ -151,7 +151,7 @@ def generate_testcase6():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase7():
     test_dir = Path("./testcases/commit_date_non_decreasing")
@@ -170,7 +170,7 @@ def generate_testcase7():
     valid_commits = [a1, a2]
     invalid_commits = [a3]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase8():
     test_dir = Path("./testcases/misc_1")
@@ -189,7 +189,7 @@ def generate_testcase8():
     valid_commits = [c1]
     invalid_commits = [c2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase9():
     test_dir = Path("./testcases/necessary_dependencies")
@@ -208,7 +208,7 @@ def generate_testcase9():
     valid_commits = [a1, b1]
     invalid_commits = [b2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase10():
     test_dir = Path("./testcases/delta_state_empty")
@@ -227,7 +227,29 @@ def generate_testcase10():
     valid_commits = [a1, b1]
     invalid_commits = [b2]
 
-    write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), "expected_")
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase11():
+    test_dir = Path("./testcases/fork_1")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date+1, given={a.encode(): 70})
+    b3 = add_as_commit_plumbing(repo, [b1, a1], b, date+2, given={a.encode(): 70}, new_ref=True)
+
+    # TODO take this into consideration
+    # valid_commits = [a1, b1, b2, b3]
+    # invalid_commits = []
+
+    # write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), forks={b.encode():{b2.encode(), b3.encode()}}, prefix="expected_")
+    write_verification_output_expected(test_dir, forks={b.encode(): {b2.encode(), b3.encode()}})
 
 if __name__ == "__main__":
     main()

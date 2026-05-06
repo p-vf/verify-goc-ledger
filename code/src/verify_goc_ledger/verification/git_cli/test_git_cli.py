@@ -6,7 +6,7 @@ from typing import Tuple
 
 from pathlib import Path
 
-from common.git_utils import Repo
+from common.git_utils import Repo, prefix_new_ref
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
@@ -51,6 +51,7 @@ class GitCliGocVerifier:
         self._commit_cache: dict[bytes, Commit] = {}
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
         self._valid_frontier: dict[bytes, Commit] = {}
+        self._forks: dict[bytes, set[bytes]] = {}
         self._ledger: dict[bytes, Account] = {}
     
     def verify(self, generate_profile_files: bool = False):
@@ -58,10 +59,13 @@ class GitCliGocVerifier:
         self._obj_cache = {}
         self._valid_frontier = {}
         self._ledger = {}
+        self._forks = {}
     
         if generate_profile_files:
             self._performance_data = {}
     
+        self._forks = self.extract_forks()
+
         commits = self.repo.retrieve_all_commits_reverse_topo_order()
         for c in commits.splitlines():
             if len(c) == 0: # this happens because the end of the message body always has an additional newline appended
@@ -85,6 +89,37 @@ class GitCliGocVerifier:
         
         for account in self._ledger.values():
             print(repr(account))
+
+    def extract_forks(self) -> dict[bytes, set[bytes]]:
+        author_refs = self.repo.retrieve_refnames("refs/heads/frontier/CHF/*")
+        fork_proofs = {}
+        for author_ref in author_refs:
+            author = bytes.removeprefix(author_ref, b"refs/heads/frontier/CHF/")
+            if bytes.startswith(author, prefix_new_ref.encode()):
+                continue
+            commits_and_children = self.repo.run_git_cmd(f"rev-list --author={author.decode()} --all --children --reverse")
+            # previous_children = None
+            for commit_and_children in commits_and_children:
+                fork_proof = set()
+                _, *children = bytes.split(commit_and_children, b" ")
+                for child_str in children:
+                    child = self.get_commit(child_str)
+                    if child.author_name == author:
+                        fork_proof.add(child.id)
+                
+                if len(fork_proof) > 1:
+                    fork_proofs[author] = set(fork_proof)
+                    break
+
+                # This would probably be a more efficient way to get ANY fork, but not necessarily the first one
+                # if previous_children is None:
+                #     continue
+                # commit, *children = bytes.split(b"", commit_and_children)
+                # if commit not in previous_children:
+                #     # found fork! however, this doesn't guarantee that this is the first fork..
+                #     pass
+                # previous_children = children
+        return fork_proofs
     
     def check_if_already_verified(self, commit_ids):
         frontier_commit_ids = set(map(lambda x: x.id, self._valid_frontier.values()))
@@ -302,13 +337,13 @@ class GitCliGocVerifier:
         return result
     
     def generate_report_files(self):
-        valid_refs = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/validated/*", self.repo.git_path).splitlines()
-        frontier = run_cmd(f"git for-each-ref '--format=%(objectname)' refs/heads/frontier/CHF/*", self.repo.git_path).splitlines()
+        valid_refs = self.repo.retrieve_ref_commits("refs/heads/validated/*")
+        frontier = self.repo.retrieve_ref_commits("refs/heads/frontier/CHF/*")
         if len(valid_refs) == 0:
             raise NotImplementedError("empty valid_refs not handled")
         valid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), valid_refs)))
         invalid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
-        write_verification_output(Path(self.repo.git_path).parent, valid, invalid)
+        write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
 
 def verify_repo(git_path: str, profile: bool, generate_report_files: bool):
     g = GitCliGocVerifier(git_path)

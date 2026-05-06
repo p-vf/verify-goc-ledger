@@ -87,13 +87,19 @@ class Repo:
         return run_cmd(f"git rev-list {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
     
     def retrieve_single_commit(self, commit_id: str):
-        return run_cmd(f"git show --format={self.commit_format} {commit_id}")
+        return run_cmd(f"git show --format={self.commit_format} {commit_id}", cwd=self.git_path)
     
     def retrieve_tree(self, tree_id: str):
         return run_cmd(f"git ls-tree {tree_id}", self.git_path)
     
     def read_blob(self, blob_id: str):
         return run_cmd(f"git cat-file -p {blob_id}", self.git_path)
+    
+    def retrieve_refnames(self, refspec):
+        return run_cmd(f"git for-each-ref '--format=%(refname)' {refspec}", self.git_path).splitlines()
+
+    def retrieve_ref_commits(self, refspec):
+        return run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
     
     def is_reachable(self, commit: str, from_commits: list[str]):
         if commit in from_commits:
@@ -103,6 +109,9 @@ class Repo:
         # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
         result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits)}", cwd=self.git_path)
         return result != b""
+    
+    def run_git_cmd(self, cmd):
+        return run_cmd(f"git {cmd}", self.git_path).splitlines()
 
 date = 1774010000
 
@@ -143,7 +152,8 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
     date += 1
     return add_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given, token_type)
 
-def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, token_type: str = "CHF"):
+prefix_new_ref = "misc_refs/"
+def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, token_type: str = "CHF", new_ref=False):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_account = []
     if created is not None:
@@ -180,7 +190,10 @@ def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int =
     commit_hash = repo.create_commit(tree_hash.decode(), deps, author, msg, date=f"{date} +0100").decode()
     repo.reset_index()
     date += 1
-    repo.update_ref(ref_prefix + author, commit_hash)
+    if new_ref:
+        repo.update_ref(ref_prefix + prefix_new_ref + commit_hash, commit_hash)
+    else:
+        repo.update_ref(ref_prefix + author, commit_hash)
     return commit_hash
 
     
