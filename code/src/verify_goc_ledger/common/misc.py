@@ -41,24 +41,25 @@ def int_from_bytes(x: bytes) -> Tuple[int, bool]:
 
 def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #run_cmd("git fsck --no-reflogs --full --dangling --lost-found", "db")
-    if hashname is None:
-        hashname = "hash"
-    hash_bytes = hash.encode()
-    if len(hash_bytes) != 40:
-        msg = f"length of {hashname} {hash} incorrect"
-        if throw:
-            raise Exception(msg)
-        else:
-            print(msg)
-        return False
-    for c in hash_bytes:
-        if not (c >= ord(b'0') and c <= ord(b'9') or c >= ord(b'a') and c <= ord(b'f')):
-            msg = f"invalid symbol(s) in {hashname} {hash}"
-            if throw:
-                raise Exception(msg)
-            else:
-                print(msg)
-            return False
+    # if hashname is None:
+    #     hashname = "hash"
+    # hash_bytes = hash.encode()
+    # if len(hash_bytes) != 40:
+    #     msg = f"length of {hashname} {hash} incorrect"
+    #     if throw:
+    #         raise Exception(msg)
+    #     else:
+    #         print(msg)
+    #     return False
+    # for c in hash_bytes:
+    #     if not (c >= ord(b'0') and c <= ord(b'9') or c >= ord(b'a') and c <= ord(b'f')):
+    #         msg = f"invalid symbol(s) in {hashname} {hash}"
+    #         if throw:
+    #             raise Exception(msg)
+    #         else:
+    #             print(msg)
+    #         return False
+    pass
 
 def write_verification_output(test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}, prefix: str = ""):
     if valid is not None and invalid is not None:

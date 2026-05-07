@@ -26,6 +26,9 @@ def main():
     generate_testcase9()
     #generate_testcase10() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
     generate_testcase11()
+    generate_testcase12()
+    generate_testcase13()
+    generate_testcase14()
 
 def generate_testcase1():
     test_dir = Path("./testcases/relevant_dependencies")
@@ -250,6 +253,64 @@ def generate_testcase11():
 
     # write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), forks={b.encode():{b2.encode(), b3.encode()}}, prefix="expected_")
     write_verification_output_expected(test_dir, forks={b.encode(): {b2.encode(), b3.encode()}})
+
+def generate_testcase12():
+    test_dir = Path("./testcases/single_author")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_as_commit_plumbing(repo, [a1], b, date+1, created=100)
+
+    valid_commits = [a1]
+    invalid_commits = [b1]
+
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase13():
+    test_dir = Path("./testcases/valid_external_deps")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
+    a2 = add_as_commit_plumbing(repo, [a1, b1], a, date+1, given={b.encode(): 10}, created=0)
+    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date+1, acked={a.encode(): 10})
+
+    valid_commits = [a1, b1]
+    invalid_commits = [a2, b2]
+
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase14():
+    test_dir = Path("./testcases/single_author_deps")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
+    a2 = add_as_commit_plumbing(repo, [a1], a, date, created=100)
+    b1 = add_as_commit_plumbing(repo, [], b, date, created=100)
+    b2 = add_as_commit_plumbing(repo, [b1, a1, a2], b, date, given={a.encode(): 10})
+
+    valid_commits = [a1, b1]
+    invalid_commits = [a2, b2]
+
+    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 if __name__ == "__main__":
     main()

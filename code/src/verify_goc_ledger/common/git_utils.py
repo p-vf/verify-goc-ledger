@@ -87,7 +87,7 @@ class Repo:
         return run_cmd(f"git rev-list {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
     
     def retrieve_single_commit(self, commit_id: str):
-        return run_cmd(f"git show --format={self.commit_format} {commit_id}", cwd=self.git_path)
+        return run_cmd(f"git show --no-patch --format={self.commit_format} {commit_id}", cwd=self.git_path)
     
     def retrieve_tree(self, tree_id: str):
         return run_cmd(f"git ls-tree {tree_id}", self.git_path)

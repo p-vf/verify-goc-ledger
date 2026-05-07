@@ -23,6 +23,8 @@ def update_frontier(commit: Commit, frontier: dict[bytes, Commit]):
 commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%B"
 def parse_commit(c: bytes):
     fields = c.split(b":")
+    if len(fields) != 10:
+        raise Exception(f"expected length 10 of commit fields. input: {c}")
     assert len(fields) == 10
     id = fields[0]
     tree = fields[1]
@@ -66,8 +68,8 @@ class GitCliGocVerifier:
     
         self._forks = self.extract_forks()
 
-        commits = self.repo.retrieve_all_commits_reverse_topo_order()
-        for c in commits.splitlines():
+        commits = self.repo.retrieve_all_commits_reverse_topo_order().splitlines()
+        for c in commits:
             if len(c) == 0: # this happens because the end of the message body always has an additional newline appended
                 continue
             commit = parse_commit(c)
@@ -199,7 +201,12 @@ class GitCliGocVerifier:
             old_acc = Account(commit.author_name)
         else:
             l = self.recreate_ledger(commit.parents)
-            old_acc = l[a.id]
+            if a.id in l:
+                old_acc = l[a.id]
+            else:
+                # This can only happen if the author of the parent is different from the author of this commit. 
+                # Will be caught in the Single author check
+                old_acc = Account(commit.author_name)
         
         if len(commit.parents) > 0:
             # === Valid external dependencies (2P-BFT-Log) ===
