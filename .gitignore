@@ -14,6 +14,7 @@ db/
 .vscode/
 **/*.stats
 testcases/
+benchmarks/
 
 # LaTeX-generated files
 *.aux
