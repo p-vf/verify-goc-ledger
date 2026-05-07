@@ -57,7 +57,8 @@ def main():
                     successful = False
                 pass
             else:
-                assert False, "unreachable"
+                print(bcolors.FAIL + f"file {file} doesn't exist, test failed." + bcolors.ENDC)
+                successful = False
         if successful:
             no_passed_testcases += 1
         else:
