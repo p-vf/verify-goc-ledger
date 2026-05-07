@@ -6,7 +6,7 @@ from typing import Tuple
 
 from pathlib import Path
 
-from common.git_utils import Repo, prefix_new_ref
+from common.git_utils import Repo
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
@@ -95,8 +95,6 @@ class GitCliGocVerifier:
         fork_proofs = {}
         for author_ref in author_refs:
             author = bytes.removesuffix(bytes.removeprefix(author_ref, b"refs/heads/"), b"/last")
-            if bytes.startswith(author, prefix_new_ref.encode()):
-                continue
             commits_and_children = self.repo.run_git_cmd(f"rev-list --author={author.decode()} --all --children --reverse")
             # previous_children = None
             for commit_and_children in commits_and_children:

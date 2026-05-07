@@ -157,8 +157,7 @@ def add_delta_state_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]
     date += 1
     return add_delta_state_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
 
-prefix_new_ref = "misc_refs/"
-def add_delta_state_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, new_ref=False):
+def add_delta_state_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_account = []
     if created is not None:
@@ -194,10 +193,7 @@ def add_delta_state_as_commit_plumbing(repo: Repo, deps: list[str], author: str,
     ref_fmt_str = "refs/heads/%s/last"
     commit_hash = repo.create_commit(tree_hash.decode(), deps, author, msg, date=f"{date} +0100").decode()
     repo.reset_index()
-    if new_ref:
-        repo.update_ref(ref_fmt_str % (prefix_new_ref + commit_hash), commit_hash)
-    else:
-        repo.update_ref(ref_fmt_str % author, commit_hash)
+    repo.update_ref(ref_fmt_str % author, commit_hash)
     return commit_hash
 
 def add_fork_proof_as_commit(repo: Repo, parents: list[str], author: str, forked_author: str, date: int):

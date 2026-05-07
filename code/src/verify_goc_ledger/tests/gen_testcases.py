@@ -25,7 +25,6 @@ def main():
     generate_testcase8()
     generate_testcase9()
     #generate_testcase10() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
-    generate_testcase11()
     generate_testcase12()
     generate_testcase13()
     generate_testcase14()
@@ -231,28 +230,6 @@ def generate_testcase10():
     invalid_commits = [b2]
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
-
-def generate_testcase11():
-    test_dir = Path("./testcases/fork_1")
-    if os.path.exists(test_dir):
-        print(f"directory {test_dir} exists already, not generating.")
-        return
-    
-    a, b = generate_human_names(2)
-    repo = Repo(str(test_dir/"db"))
-    repo.create_repo()
-    date = 1774010000
-    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date+1, created=100)
-    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date+1, given={a.encode(): 70})
-    b3 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date+2, given={a.encode(): 70}, new_ref=True)
-
-    # TODO take this into consideration
-    # valid_commits = [a1, b1, b2, b3]
-    # invalid_commits = []
-
-    # write_verification_output(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)), forks={b.encode():{b2.encode(), b3.encode()}}, prefix="expected_")
-    write_verification_output_expected(test_dir, forks={b.encode(): {b2.encode(), b3.encode()}})
 
 def generate_testcase12():
     test_dir = Path("./testcases/single_author")
