@@ -11,6 +11,11 @@ sys.path.insert(0, str(parent_folder))
 from common.misc import run_cmd, validate_hash, int_to_bytes
 from common.account import Account
 
+try:
+    empty_tree = run_cmd("git mktree </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
+except:
+    raise Exception("outside a git repository")
+
 class Repo:
     def __init__(self, git_path=".", keydir: Path | None = None, commit_format: str = "%H"):
         self.commit_format = commit_format
@@ -115,7 +120,7 @@ class Repo:
 
 date = 1774010000
 
-def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps: list[str]|None=None):
+def add_delta_state_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps: list[str]|None=None):
     """deps is a list of commit hashes that represents the commits this commit has as parents. It must not contain the last commit of the same author."""
     # TODO make date a parameter
     global date
@@ -150,10 +155,10 @@ def add_as_commit(acc: Account, repo: Repo, token_type: str="CHF", msg=" ", deps
             raise Exception("previous commit in pars")
         parents = previous + deps
     date += 1
-    return add_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given, token_type)
+    return add_delta_state_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given, token_type)
 
 prefix_new_ref = "misc_refs/"
-def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, token_type: str = "CHF", new_ref=False):
+def add_delta_state_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None, token_type: str = "CHF", new_ref=False):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_account = []
     if created is not None:
@@ -189,11 +194,15 @@ def add_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int =
     ref_prefix = "refs/heads/frontier/" + token_type + "/"
     commit_hash = repo.create_commit(tree_hash.decode(), deps, author, msg, date=f"{date} +0100").decode()
     repo.reset_index()
-    date += 1
     if new_ref:
         repo.update_ref(ref_prefix + prefix_new_ref + commit_hash, commit_hash)
     else:
         repo.update_ref(ref_prefix + author, commit_hash)
     return commit_hash
+
+def add_fork_proof_as_commit(repo: Repo, parents: list[str], author: str, forked_author: str, date: int):
+    commit_hash = repo.create_commit(empty_tree, parents, author, "FORK_PROOF", date=f"{date} +0100").decode()
+    last_id = repo.retrieve_single_commit(f"refs/heads/{forked_author}/last")
+    repo.update_ref(f"refs/heads/{forked_author}/forks/{last_id}", commit_hash)
 
     

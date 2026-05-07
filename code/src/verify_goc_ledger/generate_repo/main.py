@@ -9,7 +9,7 @@ sys.path.insert(0, str(parent_folder))
 
 from common.misc import run_cmd, validate_hash, generate_human_names
 from common.account import Account
-from common.git_utils import Repo, add_as_commit
+from common.git_utils import Repo, add_delta_state_as_commit
 
 class ValidRepoGeneratorV1:
     def __init__(self, repo_dir: Path, num_commits: int, num_users: int, seed: str="hello", sign: bool = True):
@@ -50,7 +50,7 @@ class ValidRepoGeneratorV1:
 
         for account in ledger.values():
             act = account.create(1000)
-            add_as_commit(act, repo, msg="creation of tokens")
+            add_delta_state_as_commit(act, repo, msg="creation of tokens")
 
         for i in range(self._num_commits):
             l = list(ledger.values())
@@ -62,8 +62,8 @@ class ValidRepoGeneratorV1:
             ack_act = acker.ack(amount, giver.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
             ack_msg = f"{(acker.id.decode())} acked {amount} CHF from {(giver.id.decode())}, has acked {acker.acked[giver.id]} CHF"
-            commit_give = add_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id.decode()))
-            commit_ack = add_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id.decode()))
+            commit_give = add_delta_state_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id.decode()))
+            commit_ack = add_delta_state_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id.decode()))
             validate_hash(commit_give, "commit_give")
             validate_hash(commit_ack, "commit_ack")
             print(give_msg)
@@ -115,7 +115,7 @@ class InvalidRepoGeneratorGoc:
 
         for account in ledger.values():
             act = account.create(1000)
-            add_as_commit(act, repo, msg="creation of tokens")
+            add_delta_state_as_commit(act, repo, msg="creation of tokens")
         
         invalid_commit_number = self._num_commits // 2
 
@@ -137,8 +137,8 @@ class InvalidRepoGeneratorGoc:
             ack_act = acker.ack(amount, giver.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
             ack_msg = f"{(acker.id.decode())} acked {amount} CHF from {(giver.id.decode())}, has acked {acker.acked[giver.id]} CHF"
-            commit_give = add_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id.decode()))
-            commit_ack = add_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id.decode()))
+            commit_give = add_delta_state_as_commit(give_act, repo, msg=give_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + acker.id.decode()))
+            commit_ack = add_delta_state_as_commit(ack_act, repo, msg=ack_msg, deps=repo.show_ref("refs/heads/frontier/CHF/" + giver.id.decode()))
             validate_hash(commit_give, "commit_give")
             validate_hash(commit_ack, "commit_ack")
             print(give_msg)

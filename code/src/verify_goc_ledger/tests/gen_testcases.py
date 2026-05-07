@@ -1,6 +1,6 @@
 from pathlib import Path
 import os
-from common.git_utils import Repo, add_as_commit_plumbing
+from common.git_utils import Repo, add_delta_state_as_commit_plumbing
 from common.misc import generate_human_names, write_verification_output_expected
 import sys
 import shutil
@@ -40,9 +40,9 @@ def generate_testcase1():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date + 1, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1, b1], a, date + 2, destroyed=50)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 1, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b1], a, date + 2, destroyed=50)
 
     valid_commits = [a1, b1]
     invalid_commits = [a2]
@@ -59,9 +59,9 @@ def generate_testcase2():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100, destroyed=0)
-    c1 = add_as_commit_plumbing(repo, [], c, date + 1, created=0)
-    b1 = add_as_commit_plumbing(repo, [], b, date + 2, created=100)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100, destroyed=0)
+    c1 = add_delta_state_as_commit_plumbing(repo, [], c, date + 1, created=0)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100)
     # TODO add commits to generate empty acked/given dict
 
     valid_commits = [b1]
@@ -79,17 +79,17 @@ def generate_testcase3():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100, msg="a1")
-    b1 = add_as_commit_plumbing(repo, [], b, date + 1, created=100, msg="b1")
-    c1 = add_as_commit_plumbing(repo, [], c, date + 2, created=100, msg="c1")
-    d1 = add_as_commit_plumbing(repo, [], d, date + 3, created=100, destroyed=100, msg="d1")
-    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date + 5, given={a.encode(): 10}, msg="b2")
-    a2 = add_as_commit_plumbing(repo, [a1, b2], a, date + 6, acked={b.encode(): 10}, msg="a2")
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100, msg="a1")
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 1, created=100, msg="b1")
+    c1 = add_delta_state_as_commit_plumbing(repo, [], c, date + 2, created=100, msg="c1")
+    d1 = add_delta_state_as_commit_plumbing(repo, [], d, date + 3, created=100, destroyed=100, msg="d1")
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date + 5, given={a.encode(): 10}, msg="b2")
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b2], a, date + 6, acked={b.encode(): 10}, msg="a2")
     
-    b3 = add_as_commit_plumbing(repo, [b2, a1], b, date + 7, given={a.encode(): 10}, msg="b3")
-    a3 = add_as_commit_plumbing(repo, [a2, b1], a, date + 8, acked={b.encode(): 10}, msg="a3")
-    c2 = add_as_commit_plumbing(repo, [c1], c, date + 9, created=100, msg="c2")
-    d2 = add_as_commit_plumbing(repo, [d1], d, date + 10, destroyed=100, msg="d2")
+    b3 = add_delta_state_as_commit_plumbing(repo, [b2, a1], b, date + 7, given={a.encode(): 10}, msg="b3")
+    a3 = add_delta_state_as_commit_plumbing(repo, [a2, b1], a, date + 8, acked={b.encode(): 10}, msg="a3")
+    c2 = add_delta_state_as_commit_plumbing(repo, [c1], c, date + 9, created=100, msg="c2")
+    d2 = add_delta_state_as_commit_plumbing(repo, [d1], d, date + 10, destroyed=100, msg="d2")
 
     valid_commits = [a1, b1, c1, d1, b2, a2]
     invalid_commits = [b3, a3, c2, d2]
@@ -106,11 +106,11 @@ def generate_testcase4():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date + 2, created=100)
-    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date + 3, given={a.encode(): 100})
-    b3 = add_as_commit_plumbing(repo, [b2, a1], b, date + 4, acked={a.encode(): 100}) # `b` acks from `a` although it never got anything from `a`
-    a2 = add_as_commit_plumbing(repo, [a1, b2], a, date + 5, acked={b.encode(): 120}) # `a` acks too much from `b`
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date + 3, given={a.encode(): 100})
+    b3 = add_delta_state_as_commit_plumbing(repo, [b2, a1], b, date + 4, acked={a.encode(): 100}) # `b` acks from `a` although it never got anything from `a`
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b2], a, date + 5, acked={b.encode(): 120}) # `a` acks too much from `b`
 
     valid_commits = [a1, b1, b2]
     invalid_commits = [b3, a2]
@@ -127,9 +127,9 @@ def generate_testcase5():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date + 2, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1, b1], a, date + 5, given={b.encode(): 120})
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b1], a, date + 5, given={b.encode(): 120})
 
     valid_commits = [a1, b1]
     invalid_commits = [a2]
@@ -147,9 +147,9 @@ def generate_testcase6():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date + 2, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1, b1], a, date + 5, destroyed=101)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b1], a, date + 5, destroyed=101)
 
     valid_commits = [a1, b1]
     invalid_commits = [a2]
@@ -166,9 +166,9 @@ def generate_testcase7():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1], a, date, destroyed=100)
-    a3 = add_as_commit_plumbing(repo, [a2], a, date-1, created=101)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1], a, date, destroyed=100)
+    a3 = add_delta_state_as_commit_plumbing(repo, [a2], a, date-1, created=101)
 
     valid_commits = [a1, a2]
     invalid_commits = [a3]
@@ -185,9 +185,9 @@ def generate_testcase8():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    c1 = add_as_commit_plumbing(repo, [], c, date + 2, created=100, msg="c1")
+    c1 = add_delta_state_as_commit_plumbing(repo, [], c, date + 2, created=100, msg="c1")
     
-    c2 = add_as_commit_plumbing(repo, [c1], c, date + 9, created=100, msg="c2")
+    c2 = add_delta_state_as_commit_plumbing(repo, [c1], c, date + 9, created=100, msg="c2")
 
     valid_commits = [c1]
     invalid_commits = [c2]
@@ -204,9 +204,9 @@ def generate_testcase9():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
-    b2 = add_as_commit_plumbing(repo, [b1], b, date+1, given={a.encode(): 10})
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1], b, date+1, given={a.encode(): 10})
 
     valid_commits = [a1, b1]
     invalid_commits = [b2]
@@ -223,9 +223,9 @@ def generate_testcase10():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
-    b2 = add_as_commit_plumbing(repo, [b1], b, date+1)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1], b, date+1)
 
     valid_commits = [a1, b1]
     invalid_commits = [b2]
@@ -242,10 +242,10 @@ def generate_testcase11():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
-    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date+1, given={a.encode(): 70})
-    b3 = add_as_commit_plumbing(repo, [b1, a1], b, date+2, given={a.encode(): 70}, new_ref=True)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date+1, given={a.encode(): 70})
+    b3 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date+2, given={a.encode(): 70}, new_ref=True)
 
     # TODO take this into consideration
     # valid_commits = [a1, b1, b2, b3]
@@ -264,8 +264,8 @@ def generate_testcase12():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [a1], b, date+1, created=100)
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [a1], b, date+1, created=100)
 
     valid_commits = [a1]
     invalid_commits = [b1]
@@ -282,10 +282,10 @@ def generate_testcase13():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date+1, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1, b1], a, date+1, given={b.encode(): 10}, created=0)
-    b2 = add_as_commit_plumbing(repo, [b1, a1], b, date+1, acked={a.encode(): 10})
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date+1, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b1], a, date+1, given={b.encode(): 10}, created=0)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date+1, acked={a.encode(): 10})
 
     valid_commits = [a1, b1]
     invalid_commits = [a2, b2]
@@ -302,10 +302,10 @@ def generate_testcase14():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_as_commit_plumbing(repo, [], a, date, created=100)
-    a2 = add_as_commit_plumbing(repo, [a1], a, date, created=100)
-    b1 = add_as_commit_plumbing(repo, [], b, date, created=100)
-    b2 = add_as_commit_plumbing(repo, [b1, a1, a2], b, date, given={a.encode(): 10})
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date, created=100)
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1, a2], b, date, given={a.encode(): 10})
 
     valid_commits = [a1, b1]
     invalid_commits = [a2, b2]
