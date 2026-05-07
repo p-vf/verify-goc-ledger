@@ -82,7 +82,7 @@ class GitCliGocVerifier:
             if not (msg or err):
                 update_frontier(commit, self._valid_frontier)
                 update_ledger(delta_acc, self._ledger)
-                self.repo.update_ref("refs/heads/validated/" + delta_acc.id.decode(), commit.id.decode())
+                self.repo.update_ref(f"refs/heads/{delta_acc.id.decode()}/validated", commit.id.decode())
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
             if err: print(f"failed assertions while parsing tree of commit {commit.id.decode()}:", err)
         
@@ -90,10 +90,10 @@ class GitCliGocVerifier:
             print(repr(account))
 
     def extract_forks(self) -> dict[bytes, set[bytes]]:
-        author_refs = self.repo.retrieve_refnames("refs/heads/frontier/CHF/*")
+        author_refs = self.repo.retrieve_refnames("refs/heads/*/last")
         fork_proofs = {}
         for author_ref in author_refs:
-            author = bytes.removeprefix(author_ref, b"refs/heads/frontier/CHF/")
+            author = bytes.removesuffix(bytes.removeprefix(author_ref, b"refs/heads/"), b"/last")
             if bytes.startswith(author, prefix_new_ref.encode()):
                 continue
             commits_and_children = self.repo.run_git_cmd(f"rev-list --author={author.decode()} --all --children --reverse")
@@ -347,8 +347,8 @@ class GitCliGocVerifier:
         return result
     
     def generate_report_files(self):
-        valid_refs = self.repo.retrieve_ref_commits("refs/heads/validated/*")
-        frontier = self.repo.retrieve_ref_commits("refs/heads/frontier/CHF/*")
+        valid_refs = self.repo.retrieve_ref_commits("refs/heads/*/validated")
+        frontier = self.repo.retrieve_ref_commits("refs/heads/*/last")
         if len(valid_refs) == 0:
             raise NotImplementedError("empty valid_refs not handled")
         valid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), valid_refs)))
