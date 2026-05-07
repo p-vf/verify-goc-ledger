@@ -20,4 +20,7 @@ benchmarks/
 *.aux
 *.pdf
 *.log
+*.fdb_latexmk
+*.fls
+*.synctex.gz
 
