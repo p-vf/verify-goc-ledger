@@ -29,7 +29,7 @@ def main():
             for e in os.listdir(test_dir_full):
                 if os.path.isdir(e):
                     # Run testcase
-                    verify_repo(str(test_dir_full / e), False, True)
+                    verify_repo(str(test_dir_full / e), None, True)
         except Exception as e:
             import traceback
             print(f"exception raised: \n{bcolors.FAIL + str.join("", traceback.format_tb(e.__traceback__)) + bcolors.ENDC}")

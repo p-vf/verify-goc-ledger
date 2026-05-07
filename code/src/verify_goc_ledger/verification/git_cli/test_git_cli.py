@@ -52,6 +52,7 @@ class GitCliGocVerifier:
         self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
+        self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self._valid_frontier: dict[bytes, Commit] = {}
         self._forks: dict[bytes, set[bytes]] = {}
         self._ledger: dict[bytes, Account] = {}
@@ -66,7 +67,7 @@ class GitCliGocVerifier:
         if generate_profile_files:
             self._performance_data = {}
     
-        self._forks = self.extract_forks()
+        #self._forks = self.extract_forks()
 
         commits = self.repo.retrieve_all_commits_reverse_topo_order().splitlines()
         for c in commits:
@@ -289,7 +290,9 @@ class GitCliGocVerifier:
         return c
     
     def get_delta_acc(self, commit: Commit) -> Tuple[Account, list[str]]:
-        # TODO implement account cache
+        if commit.id in self._account_cache:
+            a, valid = self._account_cache[commit.id]
+            return a, [] if valid else ["invalid commit from cache"]
         a = Account(commit.author_name)
         res = []
         id = commit.tree
@@ -331,6 +334,7 @@ class GitCliGocVerifier:
                         res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
                 if not at_least_one_entry:
                     res.append("unnecessary field 'given' (empty mapping)")
+        self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res
     
     def retrieve_and_parse_tree(self, tree_id: bytes):
@@ -355,11 +359,12 @@ class GitCliGocVerifier:
         invalid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
         write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
 
-def verify_repo(git_path: str, profile: bool, generate_report_files: bool):
+def verify_repo(git_path: str, profile_path: Path | None, generate_report_files: bool):
     g = GitCliGocVerifier(git_path)
-    if profile:
-        cProfile.runctx("g.verify()", {}, {"g": g}, "./git-cli.stats")
-        print("statistics saved to ./git-cli.stats")
+    if profile_path:
+        path = str(profile_path)
+        cProfile.runctx("g.verify()", {}, {"g": g}, path)
+        print(f"statistics saved to {path}")
     else:
         start_time = time.perf_counter_ns()
         g.verify()
@@ -384,7 +389,7 @@ def main():
         exit(2)
     profile = False
     generate_report_files = True
-    verify_repo(git_path, profile, generate_report_files)
+    verify_repo(git_path, Path("./git-cli.stats"), generate_report_files)
 
 if __name__ == "__main__":
     main()
