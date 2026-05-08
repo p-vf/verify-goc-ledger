@@ -12,24 +12,31 @@ def main():
     #     if i.startswith("generate_testcase"):
     #         global_objs[i]()
 
-    if "reset" in sys.argv:
-        shutil.rmtree("./testcases/")
+    for arg in sys.argv[1:]:
+        if arg == "reset":
+            if os.path.exists("./testcases/"):
+                shutil.rmtree("./testcases/")
+            continue
+        global_objs = globals()
+        funcname = "generate_testcase_" + arg
+        if funcname in global_objs:
+            global_objs[funcname]()
 
-    generate_testcase1()
-    generate_testcase2()
-    generate_testcase3()
-    generate_testcase4()
-    generate_testcase5()
-    generate_testcase6()
-    generate_testcase7()
-    generate_testcase8()
-    generate_testcase9()
-    #generate_testcase10() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
-    generate_testcase12()
-    generate_testcase13()
-    generate_testcase14()
+    generate_testcase_relevant_dependencies()
+    generate_testcase_delta_account_minimality_1()
+    generate_testcase_delta_account_minimality_2()
+    generate_testcase_delta_account_valid_acks()
+    generate_testcase_delta_account_non_negative_balance_giving()
+    generate_testcase_delta_account_non_negative_balance_destroying()
+    generate_testcase_commit_date_non_decreasing()
+    generate_testcase_misc_1()
+    generate_testcase_necessary_dependencies()
+    generate_testcase_delta_account_empty() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
+    generate_testcase_single_author()
+    generate_testcase_valid_external_deps()
+    generate_testcase_single_author_deps()
 
-def generate_testcase1():
+def generate_testcase_relevant_dependencies():
     test_dir = Path("./testcases/relevant_dependencies")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -48,8 +55,8 @@ def generate_testcase1():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase2():
-    test_dir = Path("./testcases/delta_state_minimality_1")
+def generate_testcase_delta_account_minimality_1():
+    test_dir = Path("./testcases/delta_account_minimality_1")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -68,8 +75,8 @@ def generate_testcase2():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase3():
-    test_dir = Path("./testcases/delta_state_minimality_2")
+def generate_testcase_delta_account_minimality_2():
+    test_dir = Path("./testcases/delta_account_minimality_2")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -95,8 +102,8 @@ def generate_testcase3():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
     
-def generate_testcase4():
-    test_dir = Path("./testcases/delta_state_valid_acks")
+def generate_testcase_delta_account_valid_acks():
+    test_dir = Path("./testcases/delta_account_valid_acks")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -116,8 +123,8 @@ def generate_testcase4():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase5():
-    test_dir = Path("./testcases/delta_state_non_negative_balance_giving")
+def generate_testcase_delta_account_non_negative_balance_giving():
+    test_dir = Path("./testcases/delta_account_non_negative_balance_giving")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -135,9 +142,9 @@ def generate_testcase5():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase6():
+def generate_testcase_delta_account_non_negative_balance_destroying():
     # TODO maybe add more complicated testcase to check if balance gets calculated correctly or smthn
-    test_dir = Path("./testcases/delta_state_non_negative_balance_destroying")
+    test_dir = Path("./testcases/delta_account_non_negative_balance_destroying")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -155,7 +162,7 @@ def generate_testcase6():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase7():
+def generate_testcase_commit_date_non_decreasing():
     test_dir = Path("./testcases/commit_date_non_decreasing")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -174,7 +181,7 @@ def generate_testcase7():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase8():
+def generate_testcase_misc_1():
     test_dir = Path("./testcases/misc_1")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -193,7 +200,7 @@ def generate_testcase8():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase9():
+def generate_testcase_necessary_dependencies():
     test_dir = Path("./testcases/necessary_dependencies")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -212,8 +219,8 @@ def generate_testcase9():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase10():
-    test_dir = Path("./testcases/delta_state_empty")
+def generate_testcase_delta_account_empty():
+    test_dir = Path("./testcases/delta_account_empty")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
         return
@@ -231,7 +238,7 @@ def generate_testcase10():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase12():
+def generate_testcase_single_author():
     test_dir = Path("./testcases/single_author")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -249,7 +256,7 @@ def generate_testcase12():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase13():
+def generate_testcase_valid_external_deps():
     test_dir = Path("./testcases/valid_external_deps")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
@@ -269,7 +276,7 @@ def generate_testcase13():
 
     write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
-def generate_testcase14():
+def generate_testcase_single_author_deps():
     test_dir = Path("./testcases/single_author_deps")
     if os.path.exists(test_dir):
         print(f"directory {test_dir} exists already, not generating.")
