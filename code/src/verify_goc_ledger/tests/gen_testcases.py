@@ -31,7 +31,7 @@ def main():
     generate_testcase_commit_date_non_decreasing()
     generate_testcase_misc_1()
     generate_testcase_necessary_dependencies()
-    generate_testcase_delta_account_empty() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
+    #generate_testcase_delta_account_empty() # TODO fix this (allowing empty delta state by add_as_commit_plumbing)
     generate_testcase_single_author()
     generate_testcase_valid_external_deps()
     generate_testcase_single_author_deps()

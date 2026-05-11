@@ -81,7 +81,9 @@ class Repo:
     
     def retrieve_all_commits_reverse_topo_order(self):
         format_str = "--format=" + self.commit_format + " "
-        commits = run_cmd(f"git log --all {format_str}--reverse --topo-order", cwd=self.git_path)
+        commits = run_cmd(f"git log --all {format_str}--reverse -z --topo-order", cwd=self.git_path).split(b"\0")
+        if len(commits) >= 1 and commits[-1] == b'':
+            return commits[:-1]
         return commits
     
     def retrieve_reachable_commits(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):

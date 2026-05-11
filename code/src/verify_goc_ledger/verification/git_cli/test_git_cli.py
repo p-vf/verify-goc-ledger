@@ -69,9 +69,9 @@ class GitCliGocVerifier:
     
         #self._forks = self.extract_forks()
 
-        commits = self.repo.retrieve_all_commits_reverse_topo_order().splitlines()
+        commits = self.repo.retrieve_all_commits_reverse_topo_order()
         for c in commits:
-            if len(c) == 0: # this happens because the end of the message body always has an additional newline appended
+            if len(c) == 0: # this happens at the end of the output for some reason
                 continue
             commit = parse_commit(c)
             self._commit_cache[commit.id] = commit
@@ -80,7 +80,7 @@ class GitCliGocVerifier:
             tmp = self.verify_delta_acc(delta_acc, commit)
             err += tmp
             
-            if not (msg or err):
+            if not (len(msg) > 0 or len(err) > 0):
                 update_frontier(commit, self._valid_frontier)
                 update_ledger(delta_acc, self._ledger)
                 self.repo.update_ref(f"refs/heads/{delta_acc.id.decode()}/validated", commit.id.decode())
