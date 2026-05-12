@@ -1,7 +1,6 @@
 import os
 import shlex
 import subprocess
-from pathlib import Path
 from typing import Tuple
 
 human_names_list = ["alice", "bob", "carol", "dean", "ethan", "felicity", "garreth", "hugh", "illiani", "jace", "kevin", "lance", "marina", "neil", "ondine", "peregrin", "quade", "shane", "tristan", "udelia", "vigo", "waverly", "xavier", "yasmine", "zoe"]
@@ -60,24 +59,6 @@ def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #             print(msg)
     #         return False
     pass
-
-def write_verification_output(test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}, prefix: str = ""):
-    if valid is not None and invalid is not None:
-        for v in valid:
-            if v in invalid:
-                raise Exception(f"Testcase invalid: commit {v} is in both valid and invalid list")
-    if valid is not None:
-        with open(test_dir/(prefix + "valid.txt"), "w+") as valid_file:
-            valid_file.writelines(map(lambda x: x.decode() + "\n", sorted(valid)))
-    if invalid is not None:
-        with open(test_dir/(prefix + "invalid.txt"), "w+") as invalid_file:
-            invalid_file.writelines(map(lambda x: x.decode() + "\n", sorted(invalid)))
-    for author in forks:
-        with open(test_dir/(prefix + author.decode() + "_fork.txt"), "w+") as fork_file:
-            fork_file.writelines(map(lambda x: x.decode() + "\n", sorted(forks[author])))
-
-def write_verification_output_expected(test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}):
-    write_verification_output(test_dir, valid, invalid, forks, "expected_")
 
 
 # Source - https://stackoverflow.com/a/287944

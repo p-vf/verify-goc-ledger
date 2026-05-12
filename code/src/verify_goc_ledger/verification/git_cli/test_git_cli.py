@@ -10,8 +10,8 @@ from common.git_utils import Repo
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
-from common.account import Account, Ledger, update_ledger
-from common.misc import int_from_bytes, run_cmd, write_verification_output
+from common.account import Account, update_ledger
+from common.misc import int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
@@ -355,7 +355,7 @@ class GitCliGocVerifier:
             raise NotImplementedError("empty valid_refs not handled")
         valid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), valid_refs)))
         invalid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
-        write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
+        self.repo.write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
 
 def verify_repo(git_path: str, profile_path: Path | None, generate_report_files: bool):
     g = GitCliGocVerifier(git_path)

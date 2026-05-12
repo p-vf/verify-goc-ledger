@@ -120,6 +120,25 @@ class Repo:
     def run_git_cmd(self, cmd):
         return run_cmd(f"git {cmd}", self.git_path).splitlines()
 
+    def write_verification_output(self, test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}, prefix: str = ""):
+        if valid is not None and invalid is not None:
+            for v in valid:
+                if v in invalid:
+                    raise Exception(f"Testcase invalid: commit {v} is in both valid and invalid list")
+        if valid is not None:
+            with open(test_dir/(prefix + "valid.txt"), "w+") as valid_file:
+                valid_file.writelines(map(lambda x: run_cmd(f"git show {x.decode()} --no-patch", self.git_path).decode() + "\n", sorted(valid)))
+        if invalid is not None:
+            with open(test_dir/(prefix + "invalid.txt"), "w+") as invalid_file:
+                invalid_file.writelines(map(lambda x: run_cmd(f"git show {x.decode()} --no-patch", self.git_path).decode() + "\n", sorted(invalid)))
+        for author in forks:
+            with open(test_dir/(prefix + author.decode() + "_fork.txt"), "w+") as fork_file:
+                fork_file.writelines(map(lambda x: run_cmd(f"git show {x.decode()} --no-patch", self.git_path).decode() + "\n", sorted(forks[author])))
+
+    def write_verification_output_expected(self, test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}):
+        self.write_verification_output(test_dir, valid, invalid, forks, "expected_")
+
+
 date = 1774010000
 
 def add_delta_state_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):

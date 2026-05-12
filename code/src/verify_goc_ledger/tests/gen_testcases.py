@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 from common.git_utils import Repo, add_delta_state_as_commit_plumbing, add_fork_proof_as_commit
-from common.misc import generate_human_names, write_verification_output_expected
+from common.misc import generate_human_names
 import sys
 import shutil
 
@@ -53,7 +53,7 @@ def generate_testcase_relevant_dependencies():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_delta_account_minimality_1():
     test_dir = Path("./testcases/delta_account_minimality_1")
@@ -73,7 +73,7 @@ def generate_testcase_delta_account_minimality_1():
     valid_commits = [b1]
     invalid_commits = [a1, c1]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_delta_account_minimality_2():
     test_dir = Path("./testcases/delta_account_minimality_2")
@@ -100,7 +100,7 @@ def generate_testcase_delta_account_minimality_2():
     valid_commits = [a1, b1, c1, d1, b2, a2]
     invalid_commits = [b3, a3, c2, d2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
     
 def generate_testcase_delta_account_valid_acks():
     test_dir = Path("./testcases/delta_account_valid_acks")
@@ -112,16 +112,16 @@ def generate_testcase_delta_account_valid_acks():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100)
-    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date + 3, given={a.encode(): 100})
-    b3 = add_delta_state_as_commit_plumbing(repo, [b2, a1], b, date + 4, acked={a.encode(): 100}) # `b` acks from `a` although it never got anything from `a`
-    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b2], a, date + 5, acked={b.encode(): 120}) # `a` acks too much from `b`
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100, msg="a1")
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date + 2, created=100, msg="b1")
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a1], b, date + 3, given={a.encode(): 100}, msg="b2")
+    b3 = add_delta_state_as_commit_plumbing(repo, [b2, a1], b, date + 4, acked={a.encode(): 100}, msg="b3") # `b` acks from `a` although it never got anything from `a`
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b2], a, date + 5, acked={b.encode(): 120}, msg="a2") # `a` acks too much from `b`
 
     valid_commits = [a1, b1, b2]
     invalid_commits = [b3, a2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_delta_account_non_negative_balance_giving():
     test_dir = Path("./testcases/delta_account_non_negative_balance_giving")
@@ -140,7 +140,7 @@ def generate_testcase_delta_account_non_negative_balance_giving():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_delta_account_non_negative_balance_destroying():
     # TODO maybe add more complicated testcase to check if balance gets calculated correctly or smthn
@@ -160,7 +160,7 @@ def generate_testcase_delta_account_non_negative_balance_destroying():
     valid_commits = [a1, b1]
     invalid_commits = [a2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_commit_date_non_decreasing():
     test_dir = Path("./testcases/commit_date_non_decreasing")
@@ -179,7 +179,7 @@ def generate_testcase_commit_date_non_decreasing():
     valid_commits = [a1, a2]
     invalid_commits = [a3]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_misc_1():
     test_dir = Path("./testcases/misc_1")
@@ -198,7 +198,7 @@ def generate_testcase_misc_1():
     valid_commits = [c1]
     invalid_commits = [c2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_necessary_dependencies():
     test_dir = Path("./testcases/necessary_dependencies")
@@ -217,7 +217,7 @@ def generate_testcase_necessary_dependencies():
     valid_commits = [a1, b1]
     invalid_commits = [b2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_delta_account_empty():
     test_dir = Path("./testcases/delta_account_empty")
@@ -236,7 +236,7 @@ def generate_testcase_delta_account_empty():
     valid_commits = [a1, b1]
     invalid_commits = [b2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_single_author():
     test_dir = Path("./testcases/single_author")
@@ -254,7 +254,7 @@ def generate_testcase_single_author():
     valid_commits = [a1]
     invalid_commits = [b1]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_valid_external_deps():
     test_dir = Path("./testcases/valid_external_deps")
@@ -274,7 +274,7 @@ def generate_testcase_valid_external_deps():
     valid_commits = [a1, b1]
     invalid_commits = [a2, b2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_single_author_deps():
     test_dir = Path("./testcases/single_author_deps")
@@ -294,7 +294,7 @@ def generate_testcase_single_author_deps():
     valid_commits = [a1, b1]
     invalid_commits = [a2, b2]
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_fork_valid():
     test_dir = Path("./testcases/fork_valid")
@@ -319,7 +319,7 @@ def generate_testcase_fork_valid():
 
     # TODO how exactly can I store the expected output?
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 def generate_testcase_fork_invalid():
     test_dir = Path("./testcases/fork_invalid")
@@ -345,7 +345,7 @@ def generate_testcase_fork_invalid():
 
     # TODO how exactly can I store the expected output?
 
-    write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 
 
 if __name__ == "__main__":
