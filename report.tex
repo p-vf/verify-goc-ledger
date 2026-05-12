@@ -15,6 +15,7 @@
 \newcommand{\balance}[0]{\textit{balance}}
 \newcommand{\apply}[0]{\textit{apply}}
 \newcommand{\acc}[0]{\textit{acc}}
+\newcommand{\msgId}[0]{\texttt{MsgId}}
 \newcommand{\deltacc}[1]{#1^\delta}
 \newcommand{\id}[1]{#1_\textit{id}}
 
@@ -24,7 +25,7 @@ TODO
 \section{Introduction}
 TODO
 
-\section{Background / Terminology} \todo{add description of }
+\section{Background / Terminology} \todo{add description of the used notation here}
 TODO
 
 \section{Design of Test Repository}
@@ -45,7 +46,7 @@ TODO
 idk what to write here yet.
 
 \subsection{State of the $\delta$-GOC-Ledger to Track}
-Each individual state represents a state of an account.
+Part of the datastructure is the account, in the following represented as $A$.
 Each account stores 5 values: $A_{id}$, $A_{\uparrow}$, $A_{\downarrow}$, $A_{\rightarrow}$ and $A_{\leftarrow}$. $A_{id}$ is the account identifier and doesn't change.
 $A_{\uparrow}$ and $A_{\downarrow}$ are numbers and represent the number of created and the number of destroyed tokens respectively.
 $A_{\rightarrow}$ and $A_{\leftarrow}$ are mappings from account identifiers to numbers and represent the number of tokens given to and received (and acknowledged) from the author respectively.
@@ -55,9 +56,9 @@ To save space, only the attributes that changed since the last state are stored 
 
 A Ledger is a dictionary of accounts. It maps account identifiers to account states.
 
-\subsection{Tree Objects as Delta-states}
+\subsection{Tree Objects as Delta Accounts}
 \label{sec:tree-obj-desc}
-Each delta state is encoded into a tree object.
+Each delta account is encoded into a tree object.
 This works as follows: The tree contains all the attributes that changed as entries.
 The entries corresponding to $A_{\uparrow}$ and $A_{\downarrow}$ contain hashes to blob objects containing their respective number (number of created and destroyed tokens).
 The entries corresponding to $A_{\leftarrow}$, $A_{\rightarrow}$ contain hashes to tree objects.
@@ -68,11 +69,10 @@ These tree objects contain entries corresponding to the authors which contain ha
     \dirtree{%
     .1 refs/.
     .2 heads/.
-    .3 frontier/.
-    .4 <token type>/.
-    .5 <author id>.
-    .5 ....
-    .4 ....
+    .3 <author-id>/.
+    .4 last.
+    .4 verified.
+    .3 ....
     }
     \caption{References directory in Git repository.}
 \end{figure}
@@ -85,11 +85,12 @@ Since this is only a benchmark of the verification of commits, I don't include t
 The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$.
 \begin{enumerate}
-    \item [$\delta$1] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$.
+    \item [$\delta$1] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$. \todo{This isn't precise enough. Each field individually must increase the state of the ledger, not just the delta account as a whole.}
     \item [$\delta$2] (non-negative balance after giving) If $\deltacc A_\rightarrow$ is non-empty, the constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
     \item [$\delta$3] (non-negative balance after destroying) If $\deltacc A_\downarrow$ is present, the constraint $L_\textit{after}[\id{\deltacc A}] \ge 0$ must hold.
     \item [$\delta$4] (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $\deltacc A_{\leftarrow}$, i.e. the author ids of authors from which the author with id $A_\textit{id}$ acked something).
     \item [$\delta$5] (valid creator) If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
+    \item [$\delta$6] (account not empty) At least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ must be defined.
 \end{enumerate}
 
 \subsection{Invariants on Message $M$ and corresponding delta account $\acc(M)$}
@@ -106,7 +107,8 @@ In order for a message $M$ to be GOC-Ledger valid, the following must hold \foot
     \item the invariants $\delta1$ to $\delta6$ (see Section \ref{sec:invariants-delta-a}) must be satisfied for $\acc(M)$
     \item (non-decreasing dates) $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
     \item the dependencies of $M$ are relevant
-    \item for all $M' \in M_\textit{deps}\cup \{M_prev\}\}$, $M'$ must also be GOC-Ledger valid
+    \item for any author $a \in \acc(M)_{\rightarrow *} \cup \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{id} = a$ and $\msgId(M') \in M_\textit{deps}$
+    \item for all $M'$ with $\msgId(M') \in M_\textit{deps}\cup \{M_prev\}$, $M'$ must also be GOC-Ledger valid
 \end{itemize}
 
 \subsection{Invariants on Message $M$ inherited from 2P-BFT-Log}
@@ -117,6 +119,7 @@ In order for a message $M$ to be GOC-Ledger valid, the following must hold \foot
     \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, there exists at most one $\textit{msgId} \in M_\textit{deps}$, such that $\texttt{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} = \textit{author}$.
     \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$.
     \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
+    \item [M7] \emph{(monotonic dependencies)}: if $M \stackrel{log}{\rightsquigarrow} M'$ then for all $(msgId, msgId') \in M_\textit{deps} \times M'_\textit{deps} : msgId = \msgId(D) \land msgId' = \msgId(D') \land D_\textit{author} = D'_\textit{author} \Rightarrow D \le_\mathcal M D'$. \footnote{This invariant isn't necessary for safety and liveness properties, but we check it nonetheless}
 \end{enumerate}
 Validity properties if log $L$ is in growing phase:
 \begin{enumerate}
@@ -128,12 +131,32 @@ Validity properties if log $L$ is in shrinking phase:
 \begin{enumerate}
     \item [FL1] \emph{(non-empty forks)}: $L_\textit{forks} \neq \emptyset$.
     \item [FL2] \emph{(valid last message)}: same as CL2.
-    \item [FL3] \emph{(consistent previouse author)}: same as CL3.
+    \item [FL3] \emph{(consistent previous author)}: same as CL3.
     \item [FL4] \emph{(valid forks)}: for all $M \in L_\textit{forks}$, $M$ is valid.
     \item [FL5] \emph{(consistent fork author)}: for all $M \in L_\textit{forks}$, $L_\textit{author} = M_\textit{author}$ and if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
     \item [FL6] \emph{(valid proof)}: if $M \in L_\textit{forks}$ then $\exists M' \in L_\textit{forks}$ such that $M \neq M'$ and $M_\textit{prev} = M'_\textit{prev}$.
     \item [FL7] \emph{(consistent proof)}: for all $M \in L_\textit{forks}$, $L_\textit{last} = M_\textit{prev}$.
 \end{enumerate}
+
+\subsection{Extensions to 2P-BFT-Log}
+\todo{explain how the arcs in the diagrams map to \_prev and \_deps}
+One thing that is not explicitly stated in the design of the 2P-BFT-Log is how forks can lead intuitively to invalid messages if we expect certain behaviours of correct replicas. If an author detects a fork, we want to check that the construction and replication of a corresponding fork proof happened as soon as possible. In order to be able to check the timing of such a fork proof, the author must create a fork proof and reference it from a message in their own log. We call such a message a \emph{fork acknowledgement} which must satisfy some invariants which still have to be determined. 
+To motivate this concept, we can take a look at the scenario depicted in Figure \ref{fig:fork_scenario_1}, where there are 3 authors $a$, $b$, and $c$. The messages $x_i$ correspond to author $x \in \{a, b, c\}$ and can be assumed to valid according to the previous definition of valid. One can see that there is a fork in $b$s log, namely on message $b_1$, where $FP = \{b_2, b_3\}$ would serve as a fork proof. 
+
+Notice that in order for $a$ to produce message $a_3$, (due to the message graph being a hash graph) $a$ must know about all messages in $\mathcal H(a_2) \cup \mathcal H(c_2) = \{a_1, a_2, b_1, b_2, b_3, c_1, c_2\}$ which includes the fork proof $FP$. From this we know that $a$ should have created a fork proof message of $FP$ before producing $a_3$, which means $a_3$ could be considered invalid. In order for the other participants to verify that $a$ added the fork proof at the right time, $a$ would have to add a fork acknowledgement message referencing the fork proof to her message history before creating message $a_3$, which can be seen in Figure \ref{fig:fork_scenario_1_fixed} (the magenta message is the fork proof, the green message the fork acknowledgement). 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.5\textwidth]{figures/fork_scenario_1.png}
+    \caption{An example scenario of a fork in a message graph, where $a_3$ could be considered invalid}
+    \label{fig:fork_scenario_1}
+\end{figure}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.5\textwidth]{figures/fork_scenario_1_fixed.png}
+    \caption{The example message graph of Figure \ref{fig:fork_scenario_1} but where $a$ behaves correctly}
+    \label{fig:fork_scenario_1_fixed}
+\end{figure}
+Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e. 
 
 
 \subsection{Validity Invariants Concerning Git Objects}
