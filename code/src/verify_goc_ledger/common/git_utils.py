@@ -86,12 +86,12 @@ class Repo:
             return commits[:-1]
         return commits
     
-    def retrieve_reachable_commits(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):
+    def retrieve_reachable_commits_reverse_topo_order(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):
         if len(not_from_commits) == 0:
             not_args = ""
         else:
             not_args = f" ^{str.join(" ^", not_from_commits)}"
-        return run_cmd(f"git rev-list {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
+        return run_cmd(f"git rev-list --reverse --topo-order {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
     
     def retrieve_single_commit(self, commit_id: str):
         return run_cmd(f"git show --no-patch --format={self.commit_format} {commit_id}", cwd=self.git_path)

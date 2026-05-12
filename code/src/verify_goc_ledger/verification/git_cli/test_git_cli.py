@@ -10,15 +10,15 @@ from common.git_utils import Repo
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
-from common.account import Account, update_ledger
+from common.account import Account, Log, update_frontier
 from common.misc import int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
-from datastructures import Commit, Child, Tree, Statistics
+from common.datastructures import Commit, Child, Tree, Statistics
 
-def update_frontier(commit: Commit, frontier: dict[bytes, Commit]):
-    frontier[commit.author_name] = commit
+# def update_ledger(commit: Commit, frontier: dict[bytes, Commit]):
+#     frontier[commit.author_name] = commit
 
 commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%B"
 def parse_commit(c: bytes):
@@ -53,15 +53,13 @@ class GitCliGocVerifier:
         self._commit_cache: dict[bytes, Commit] = {}
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
-        self._valid_frontier: dict[bytes, Commit] = {}
+        self._valid_frontier: dict[bytes, dict[bytes, Log]] = {}
         self._forks: dict[bytes, set[bytes]] = {}
-        self._ledger: dict[bytes, Account] = {}
     
     def verify(self, generate_profile_files: bool = False):
         self._commit_cache = {}
         self._obj_cache = {}
         self._valid_frontier = {}
-        self._ledger = {}
         self._forks = {}
     
         if generate_profile_files:
@@ -81,14 +79,15 @@ class GitCliGocVerifier:
             err += tmp
             
             if not (len(msg) > 0 or len(err) > 0):
-                update_frontier(commit, self._valid_frontier)
-                update_ledger(delta_acc, self._ledger)
+                if commit.author_name in self._valid_frontier:
+                    update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
+                else:
+                    self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit)}
                 self.repo.update_ref(f"refs/heads/{delta_acc.id.decode()}/validated", commit.id.decode())
+            
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
-            if err: print(f"failed assertions while parsing tree of commit {commit.id.decode()}:", err)
+            if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}:", err)
         
-        for account in self._ledger.values():
-            print(repr(account))
 
     def extract_forks(self) -> dict[bytes, set[bytes]]:
         author_refs = self.repo.retrieve_refnames("refs/heads/*/last")
@@ -120,9 +119,11 @@ class GitCliGocVerifier:
         return fork_proofs
     
     def check_if_already_verified(self, commit_ids):
-        frontier_commit_ids = set(map(lambda x: x.id, self._valid_frontier.values()))
+        frontier_commit_ids: set[Log] = set()
+        for author in self._valid_frontier:
+            frontier_commit_ids.add(self._valid_frontier[author][author])
         for c in commit_ids:
-            if not self.repo.is_reachable(c.decode(), list(map(lambda x: x.decode(), frontier_commit_ids))):
+            if not self.repo.is_reachable(c.decode(), list(map(lambda x: x.last_non_forked.id.decode(), frontier_commit_ids))):
                 return False
         return True
     
@@ -161,7 +162,8 @@ class GitCliGocVerifier:
         
         # Monotonicity of commit dates of same author
         if name in self._valid_frontier:
-            last_time = int(self._valid_frontier[name].author_date)
+            # TODO replace this check with a check on fork_frontier
+            last_time = int(self._valid_frontier[name][name].last_non_forked.author_date)
             if last_time > int(c.author_date):
                 res.append(f"author date is not non-decreasing: commit-time of causally older commit: {last_time}, commit-time of causally newer commit: {c.author_date}")
         
@@ -201,12 +203,11 @@ class GitCliGocVerifier:
         else:
             l = self.recreate_ledger(commit.parents)
             if a.id in l:
-                old_acc = l[a.id]
+                old_acc = l[a.id].account
             else:
                 # This can only happen if the author of the parent is different from the author of this commit. 
                 # Will be caught in the Single author check
                 old_acc = Account(commit.author_name)
-        
         if len(commit.parents) > 0:
             # === Valid external dependencies (2P-BFT-Log) ===
             if not self.check_if_already_verified(commit.parents):
@@ -233,6 +234,13 @@ class GitCliGocVerifier:
             for author in a.given:
                 if author not in authors_in_deps:
                     res.append(f"necessary dependency for author {author} missing (given)")
+            # === Monotonicity of dependencies (2P-BFT-Log) ===
+            from_cs = set(commit.parents)
+            for author in authors_in_deps:
+                if author in l:
+                    c = l[author].last_non_forked.id
+                    if not c in from_cs:
+                        res.append(f"dependency {c} not monotonic")
 
         # === Minimality of delta state checks Part 2 ===
         if has_destroyed:
@@ -253,9 +261,9 @@ class GitCliGocVerifier:
                         res.append(f"unnecessary entry in mapping 'given' (GOC not increased for recipient {recipient})")
         # === Non-negative balance checks ===
         if has_given or has_destroyed:
-            lg = l.copy()
-            update_ledger(a, lg)
-            if lg[a.id].balance() < 0:
+            lg = l.copy() # TODO avoid this copy (might be trivial, as l might not be used after this point)
+            update_frontier(a, lg, commit)
+            if lg[a.id].account.balance() < 0:
                 if has_given:
                     res.append(f"author {a.id} didn't have enough money to give")
                 if has_destroyed:
@@ -263,21 +271,20 @@ class GitCliGocVerifier:
         # === Valid acknowledgements check ===
         if has_acked:
             for author, amount in a.acked.items():
-                if a.id not in l[author].given or l[author].given[a.id] < amount:
+                if a.id not in l[author].account.given or l[author].account.given[a.id] < amount:
                     res.append(f"author {a.id} wasn't given the money they acked from {author}")
         return res
     
-    def recreate_ledger(self, commit_ids: list[bytes]) -> dict[bytes, Account]:
+    def recreate_ledger(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
         assert len(commit_ids) > 0
-        # TODO use --first-parent to only include the relevant authors into the log!
+        # TBD maybe use --first-parent to only include the relevant authors into the log!
+        # Except maybe when fork detection is necessary, then we need the other authors..
         ledger = {}
-        # TODO only allow verified commits
-        relevant_commit_ids = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), commit_ids)))
+        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), commit_ids)))
         for commit_id in relevant_commit_ids:
             commit = self.get_commit(commit_id)
             a, _ = self.get_delta_acc(commit)
-            update_ledger(a, ledger)
-            
+            update_frontier(a, ledger, commit)
         return ledger
 
     def get_commit(self, oid: bytes) -> Commit:
@@ -353,8 +360,8 @@ class GitCliGocVerifier:
         frontier = self.repo.retrieve_ref_commits("refs/heads/*/last")
         if len(valid_refs) == 0:
             raise NotImplementedError("empty valid_refs not handled")
-        valid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), valid_refs)))
-        invalid = self.repo.retrieve_reachable_commits(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
+        valid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), valid_refs)))
+        invalid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
         self.repo.write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
 
 def verify_repo(git_path: str, profile_path: Path | None, generate_report_files: bool):

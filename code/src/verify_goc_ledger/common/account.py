@@ -1,12 +1,32 @@
 from __future__ import annotations
 
+from common.datastructures import Commit
+
 type Ledger = dict[bytes, Account]
 
-def update_ledger(account: Account, ledger: Ledger):
-    if account.id in ledger:
-        ledger[account.id].merge(account)
+def update_frontier(account: Account, frontier: dict[bytes, Log], last_message: Commit):
+    """ASSUMPTION accounts get added in reverse topological order!! (relevant for message_id)"""
+    if account.id in frontier:
+        frontier[account.id].account.merge(account)
+        frontier[account.id].last_non_forked = last_message
     else:
-        ledger[account.id] = account
+        frontier[account.id] = Log(account.id, last_message)
+        frontier[account.id].last_non_forked = last_message
+        frontier[account.id].account = account
+
+class Log:
+    def __init__(self, author: bytes, last_non_forked: Commit):
+        self.author: bytes = author
+        self.account = Account(author)
+        # The following two are assumed to consist of valid commits
+        self.last_non_forked: Commit = last_non_forked
+        self.fork_frontier: set[Commit] = set()
+    
+    def __str__(self):
+        return f"Log({self.author}, {self.last_non_forked.id})"
+    
+    def __repr__(self):
+        return self.__str__()
 
 class Account:
     id: bytes

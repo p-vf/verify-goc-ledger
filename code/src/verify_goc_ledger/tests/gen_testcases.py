@@ -35,6 +35,7 @@ def main():
     generate_testcase_single_author()
     generate_testcase_valid_external_deps()
     generate_testcase_single_author_deps()
+    generate_testcase_monotonicity_of_deps()
 
 def generate_testcase_relevant_dependencies():
     test_dir = Path("./testcases/relevant_dependencies")
@@ -327,7 +328,7 @@ def generate_testcase_fork_invalid():
         print(f"directory {test_dir} exists already, not generating.")
         return
     
-    a, b, c = generate_human_names(2)
+    a, b, c = generate_human_names(3)
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
@@ -344,6 +345,27 @@ def generate_testcase_fork_invalid():
     invalid_commits = [a3]
 
     # TODO how exactly can I store the expected output?
+
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase_monotonicity_of_deps():
+    test_dir = Path("./testcases/monotonicity_of_deps")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_delta_state_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_state_as_commit_plumbing(repo, [], b, date, created=100)
+    a2 = add_delta_state_as_commit_plumbing(repo, [a1, b1], a, date, given={b.encode(): 10})
+    b2 = add_delta_state_as_commit_plumbing(repo, [b1, a2], b, date, acked={a.encode(): 10})
+    b3 = add_delta_state_as_commit_plumbing(repo, [b2, a1], b, date, given={a.encode(): 10})
+
+    valid_commits = [a1, b1, a2, b2]
+    invalid_commits = [b3]
 
     repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 

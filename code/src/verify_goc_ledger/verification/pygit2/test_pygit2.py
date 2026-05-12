@@ -9,7 +9,7 @@ from pathlib import Path
 parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
-from common.account import Account, Ledger, update_ledger
+from common.account import Account, Ledger, update_frontier
 from common.misc import int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
@@ -28,7 +28,7 @@ def verify_repository(repo, head_commit: Oid):
         delta_acc, err = get_delta_acc(commit)
         # msg += verify_delta_account(delta_acc, ledger)
         update_frontier(commit, frontier)
-        update_ledger(delta_acc, ledger)
+        update_frontier(delta_acc, ledger)
         if msg: print("failed assertions while parsing commit:", msg)
         if err: print("failed assertions while parsing tree of commit:", err)
 
