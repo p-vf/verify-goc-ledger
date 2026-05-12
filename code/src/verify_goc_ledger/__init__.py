@@ -1,6 +1,3 @@
-def main() -> None:
-    print("Hello from generate-repo!")
-
 import sys
 from pathlib import Path
 parent_folder = Path(__file__).resolve().parent

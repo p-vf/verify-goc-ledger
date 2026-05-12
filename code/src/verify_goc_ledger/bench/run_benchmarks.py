@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-import sys
 import argparse
 
 from test_git_cli import verify_repo

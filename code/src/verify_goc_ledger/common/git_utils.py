@@ -1,6 +1,5 @@
 import subprocess
 import os
-import shutil
 import sys
 
 from pathlib import Path
@@ -141,7 +140,7 @@ class Repo:
 
 date = 1774010000
 
-def add_delta_state_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):
+def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):
     """deps is a list of commit hashes that represents the commits this commit has as parents. It must not contain the last commit of the same author."""
     # TODO make date a parameter
     global date
@@ -176,9 +175,9 @@ def add_delta_state_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]
             raise Exception("previous commit in pars")
         parents = previous + deps
     date += 1
-    return add_delta_state_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
+    return add_delta_account_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
 
-def add_delta_state_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None):
+def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_account = []
     if created is not None:

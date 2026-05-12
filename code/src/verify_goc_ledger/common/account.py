@@ -54,26 +54,26 @@ class Account:
             f"  balance: {self.balance()}\n"
 
     def give(self, amount, to_id):
-        """returns delta state"""
+        """returns delta account"""
         if to_id not in self.given.keys():
             self.given[to_id] = 0
         self.given[to_id] += amount
         return Account(self.id, given={to_id: self.given[to_id]})
 
     def ack(self, amount, from_id):
-        """returns delta state"""
+        """returns delta account"""
         if from_id not in self.acked.keys():
             self.acked[from_id] = 0
         self.acked[from_id] += amount
         return Account(self.id, acked={from_id: self.acked[from_id]})
 
     def create(self, amount):
-        """returns delta state"""
+        """returns delta account"""
         self.created += amount
         return Account(self.id, created=self.created)
 
     def destroy(self, amount):
-        """returns delta state"""
+        """returns delta account"""
         self.destroyed += amount
         return Account(self.id, destroyed=self.destroyed)
 

@@ -15,7 +15,7 @@ from common.misc import int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
-from common.datastructures import Commit, Child, Tree, Statistics
+from common.datastructures import Commit, Child, Tree
 
 # def update_ledger(commit: Commit, frontier: dict[bytes, Commit]):
 #     frontier[commit.author_name] = commit
@@ -56,14 +56,11 @@ class GitCliGocVerifier:
         self._valid_frontier: dict[bytes, dict[bytes, Log]] = {}
         self._forks: dict[bytes, set[bytes]] = {}
     
-    def verify(self, generate_profile_files: bool = False):
+    def verify(self):
         self._commit_cache = {}
         self._obj_cache = {}
         self._valid_frontier = {}
         self._forks = {}
-    
-        if generate_profile_files:
-            self._performance_data = {}
     
         #self._forks = self.extract_forks()
 
@@ -196,14 +193,14 @@ class GitCliGocVerifier:
         if a.given:
             has_given = True
         if not (has_given or has_acked or has_destroyed or has_created):
-            return ["empty delta state"]
+            return ["empty delta account"]
         if len(commit.parents) == 0:
-            l = {}
+            frontier = {}
             old_acc = Account(commit.author_name)
         else:
-            l = self.recreate_ledger(commit.parents)
-            if a.id in l:
-                old_acc = l[a.id].account
+            frontier = self.recreate_frontier(commit.parents)
+            if a.id in frontier:
+                old_acc = frontier[a.id].account
             else:
                 # This can only happen if the author of the parent is different from the author of this commit. 
                 # Will be caught in the Single author check
@@ -237,12 +234,12 @@ class GitCliGocVerifier:
             # === Monotonicity of dependencies (2P-BFT-Log) ===
             from_cs = set(commit.parents)
             for author in authors_in_deps:
-                if author in l:
-                    c = l[author].last_non_forked.id
+                if author in frontier:
+                    c = frontier[author].last_non_forked.id
                     if not c in from_cs:
                         res.append(f"dependency {c} not monotonic")
 
-        # === Minimality of delta state checks Part 2 ===
+        # === Minimality of delta account checks Part 2 ===
         if has_destroyed:
             if old_acc.destroyed >= a.destroyed:
                 res.append("unnecessary field 'destroyed' (GOC not increased)")
@@ -261,7 +258,7 @@ class GitCliGocVerifier:
                         res.append(f"unnecessary entry in mapping 'given' (GOC not increased for recipient {recipient})")
         # === Non-negative balance checks ===
         if has_given or has_destroyed:
-            lg = l.copy() # TODO avoid this copy (might be trivial, as l might not be used after this point)
+            lg = frontier.copy() # TODO avoid this copy (might be trivial, as l might not be used after this point)
             update_frontier(a, lg, commit)
             if lg[a.id].account.balance() < 0:
                 if has_given:
@@ -271,11 +268,11 @@ class GitCliGocVerifier:
         # === Valid acknowledgements check ===
         if has_acked:
             for author, amount in a.acked.items():
-                if a.id not in l[author].account.given or l[author].account.given[a.id] < amount:
+                if a.id not in frontier[author].account.given or frontier[author].account.given[a.id] < amount:
                     res.append(f"author {a.id} wasn't given the money they acked from {author}")
         return res
     
-    def recreate_ledger(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
+    def recreate_frontier(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
         assert len(commit_ids) > 0
         # TBD maybe use --first-parent to only include the relevant authors into the log!
         # Except maybe when fork detection is necessary, then we need the other authors..
@@ -302,7 +299,7 @@ class GitCliGocVerifier:
         res = []
         id = commit.tree
         new_tree = self.retrieve_and_parse_tree(id)
-        # === Minimality of delta state checks Part 1 ===
+        # === Minimality of delta account checks Part 1 ===
         for child in new_tree.children:
             minimal_bytes = True
             if child.name == b"created":

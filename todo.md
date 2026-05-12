@@ -6,11 +6,12 @@
   - [ ] introduce a new message type (FORK_ACKNOWLEDGEMENT)
   - [ ] write down how the example would be correct
 - [ ] verifier: Implement caching of last ledger state of each author
-- [ ] verifier: Implement checks for invariant M7 (monotonic dependencies): 
+- [x] verifier: Implement checks for invariant M7 (monotonic dependencies): 
   - To achieve this, one could store the most recent commit this author 
   knows from each other author (could be stored in conjunction with the 
   last ledger state of each author) and then compare any dependencies to
   those. 
+- [ ] benchmarks: track how much time each invariant check takes
 
 ### Invariant Checks
 - [ ] implement fork proof checks
@@ -22,7 +23,7 @@
 objects
 
 ### Chores
-- [ ] replace all instances of "delta state" with "delta account" where 
+- [x] replace all instances of "delta state" with "delta account" where 
 it makes sense
 - [ ] replace variables of type `bytes` with variables of type `str` 
 where it makes sense
