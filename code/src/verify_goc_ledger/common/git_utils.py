@@ -1,6 +1,7 @@
 import subprocess
 import os
 import sys
+import pprint
 
 from pathlib import Path
 from typing import Sequence
@@ -14,6 +15,8 @@ try:
     empty_tree = run_cmd("git mktree </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
 except:
     raise Exception("outside a git repository")
+
+type TreeDict = dict[str, TreeDict | bytes]
 
 class Repo:
     def __init__(self, git_path=".", keydir: Path | None = None, commit_format: str = "%H"):
@@ -54,21 +57,33 @@ class Repo:
         run_cmd(f"git init {self.git_path}")
         run_cmd("git config gpg.format ssh", cwd=self.git_path)
 
-    def create_tree(self, type_hash_name: list[tuple[str, str, str]], name):
-        # TODO this function is a bad interface to the user. maybe use PyGit2's Treebuilder instead
-        #print(f"creating tree {type_hash_name}")
-        for (t, h, n) in type_hash_name:
-            if t == "tree":
-                continue # maybe check that the tree object exists here
-            cmd = f"git update-index --add --cacheinfo 100644 {h} {n}"
-        #    print(cmd)
-            run_cmd(cmd, self.git_path)
-        res = bytes.strip(run_cmd(f"git write-tree --prefix={name}/", self.git_path))
-        # print(f"created tree {res.decode()}")
-        return res
-
+    def create_tree(self, data: TreeDict, dir: str) -> str:
+        return self._create_tree_internal([dir], data)[0]
+        
+    def _create_tree_internal(self, path: list[str], data: TreeDict) -> tuple[str, int]:
+        added_entries = 0
+        cacheinfo_opts = ""
+        for n in data:
+            entry = data[n]
+            if isinstance(entry, bytes):
+                h = self.create_blob(entry)
+                added_entries += 1
+                cacheinfo_opts += f" --cacheinfo 100644,{h.decode()},{str.join("/", path + [n])}"
+            else:
+                assert isinstance(entry, dict)
+                _, new_added_entries = self._create_tree_internal(path + [n], entry)
+                added_entries += new_added_entries
+        if len(cacheinfo_opts) > 0:
+            run_cmd(f"git update-index --add {cacheinfo_opts}", self.git_path)
+        if added_entries == 0:
+            res = run_cmd(f"git mktree </dev/null")
+        else:
+            assert len(path) > 0, "path must have positive length"
+            res = run_cmd(f"git write-tree --missing-ok --prefix={str.join("/", path)}/", self.git_path)
+        return bytes.strip(res).decode(), added_entries
+    
     def reset_index(self):
-        run_cmd("git rm --cached -r .", self.git_path)
+        run_cmd("git rm --cached -r --ignore-unmatch .", self.git_path)
 
     def show_ref(self, ref: str):
         res = run_cmd(f"git for-each-ref '--format=%(objectname)' {ref}", self.git_path).decode().splitlines()
@@ -142,10 +157,7 @@ date = 1774010000
 
 def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):
     """deps is a list of commit hashes that represents the commits this commit has as parents. It must not contain the last commit of the same author."""
-    # TODO make date a parameter
     global date
-
-    tree_account = []
 
     created = acc.created
     destroyed = acc.destroyed
@@ -177,41 +189,31 @@ def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[st
     date += 1
     return add_delta_account_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
 
-def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict | None = None, given: dict | None = None):
+def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict[bytes, int] | None = None, given: dict[bytes, int] | None = None):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
-    tree_account = []
+    tree_data: TreeDict = {}
     if created is not None:
-        created_hash = repo.create_blob(int_to_bytes(created))
-        validate_hash(created_hash.decode(), "created_hash")
-        tree_account.append(("blob", created_hash.decode(), "account/created"))
+        tree_data["created"] = int_to_bytes(created)
     if destroyed is not None:
-        destroyed_hash = repo.create_blob(int_to_bytes(destroyed))
-        validate_hash(destroyed_hash.decode(), "destroyed_hash")
-        tree_account.append(("blob", destroyed_hash.decode(), "account/destroyed"))
+        tree_data["destroyed"] = int_to_bytes(destroyed)
 
     if given is not None: # if given non-empty
-        tree_given = []
+        tree_given: TreeDict = {}
         for account_id, num in given.items():
-            given_hash = repo.create_blob(int_to_bytes(num))
-            validate_hash(given_hash.decode(), "given_hash")
-            tree_given.append(("blob", given_hash.decode(), "account/given/" + account_id.decode()))
-        tree_given_hash = repo.create_tree(tree_given, "account/given")
-        validate_hash(tree_given_hash.decode(), "tree_given_hash")
-        tree_account.append(("tree", tree_given_hash.decode(), "account/given"))
+            assert isinstance(account_id, bytes)
+            tree_given[account_id.decode()] = int_to_bytes(num)
+        tree_data["given"] = tree_given
 
     if acked is not None: # if acked non-empty
-        tree_acked = []
+        tree_acked: TreeDict = {}
         for account_id, num in acked.items():
-            acked_hash = repo.create_blob(int_to_bytes(num))
-            validate_hash(acked_hash.decode(), "acked_hash")
-            tree_acked.append(("blob", acked_hash.decode(), "account/acked/" + account_id.decode()))
-        tree_acked_hash = repo.create_tree(tree_acked, "account/acked")
-        validate_hash(tree_acked_hash.decode(), "tree_acked_hash")
-        tree_account.append(("tree", tree_acked_hash.decode(), "acked"))
+            assert isinstance(account_id, bytes)
+            tree_acked[account_id.decode()] = int_to_bytes(num)
+        tree_data["acked"] = tree_acked
 
-    tree_hash = repo.create_tree(tree_account, "account")
+    tree_hash = repo.create_tree(tree_data, "account")
     ref_fmt_str = "refs/heads/%s/last"
-    commit_hash = repo.create_commit(tree_hash.decode(), deps, author, msg, date=f"{date} +0100").decode()
+    commit_hash = repo.create_commit(tree_hash, deps, author, msg, date=f"{date} +0100").decode()
     repo.reset_index()
     repo.update_ref(ref_fmt_str % author, commit_hash)
     return commit_hash

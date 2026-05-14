@@ -31,7 +31,10 @@ def main():
     generate_testcase_commit_date_non_decreasing()
     generate_testcase_misc_1()
     generate_testcase_necessary_dependencies()
-    #generate_testcase_delta_account_empty() # TODO fix this (allowing empty delta account by add_as_commit_plumbing)
+    generate_testcase_delta_account_empty()
+    generate_testcase_delta_account_given_empty()
+    generate_testcase_delta_account_acked_empty()
+    generate_testcase_delta_account_multiple_fields()
     generate_testcase_single_author()
     generate_testcase_valid_external_deps()
     generate_testcase_single_author_deps()
@@ -69,7 +72,6 @@ def generate_testcase_delta_account_minimality_1():
     a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100, destroyed=0)
     c1 = add_delta_account_as_commit_plumbing(repo, [], c, date + 1, created=0)
     b1 = add_delta_account_as_commit_plumbing(repo, [], b, date + 2, created=100)
-    # TODO add commits to generate empty acked/given dict
 
     valid_commits = [b1]
     invalid_commits = [a1, c1]
@@ -236,6 +238,64 @@ def generate_testcase_delta_account_empty():
 
     valid_commits = [a1, b1]
     invalid_commits = [b2]
+
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase_delta_account_given_empty():
+    test_dir = Path("./testcases/delta_account_given_empty")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_delta_account_as_commit_plumbing(repo, [b1], b, date+1, given={})
+
+    valid_commits = [a1, b1]
+    invalid_commits = [b2]
+
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase_delta_account_acked_empty():
+    test_dir = Path("./testcases/delta_account_acked_empty")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date+1, created=100)
+    b2 = add_delta_account_as_commit_plumbing(repo, [b1], b, date+1, acked={})
+
+    valid_commits = [a1, b1]
+    invalid_commits = [b2]
+
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase_delta_account_multiple_fields():
+    test_dir = Path("./testcases/delta_account_multiple_fields")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+    
+    a, b = generate_human_names(2)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100)
+    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date, created=100)
+    a2 = add_delta_account_as_commit_plumbing(repo, [a1, b1], a, date, given={b.encode(): 50})
+    b2 = add_delta_account_as_commit_plumbing(repo, [b1, a2], b, date, acked={a.encode(): 50}, given={a.encode(): 50})
+
+    valid_commits = [a1, b1, a2, b2]
+    invalid_commits = []
 
     repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 

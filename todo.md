@@ -20,8 +20,8 @@
 ### Features of repo generation
 - [ ] introduce root message type (start of a log)
 - [ ] allow generation of fork proofs
-- [ ] allow generation of empty delta account as git objects
-- [ ] allow generation of empty given/acked fields in delta account as git 
+- [x] allow generation of empty delta account as git objects
+- [x] allow generation of empty given/acked fields in delta account as git 
   objects
 
 ### Chores
