@@ -32,6 +32,6 @@ where it makes sense
 - [ ] generation of repos: prevent git from creating unnecessary hooks (scripts)
 
 ### Future Ideas
-- [ ] create benchmarks with a more realistic distribution of 
+- [x] create benchmarks with a more realistic distribution of
 transactions per author (heavy-tailed).
 - [ ] Recreate test scenario of real transactions

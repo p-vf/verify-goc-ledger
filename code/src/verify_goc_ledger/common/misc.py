@@ -1,9 +1,39 @@
 import os
 import shlex
 import subprocess
-from typing import Tuple
+from typing import TypeVar, Generic
+import shutil
+import random
+from bisect import bisect_left
 
 human_names_list = ["alice", "bob", "carol", "dean", "ethan", "felicity", "garreth", "hugh", "illiani", "jace", "kevin", "lance", "marina", "neil", "ondine", "peregrin", "quade", "shane", "tristan", "udelia", "vigo", "waverly", "xavier", "yasmine", "zoe"]
+
+T = TypeVar("T")
+class ParetoSampler(Generic[T]):
+    def __init__(self, k, arr: list[T]):
+        self.k = k
+        self.arr = arr
+        n = len(arr)
+        self.bin_sizes = [self.F_inv(((n-i-1) / (n))) for i in range(n)]
+        cumulative_value = 0
+        self.cumulated_bins = [0] * n
+        for i, x in enumerate(self.bin_sizes):
+            cumulative_value += x
+            self.cumulated_bins[i] = cumulative_value
+
+    def F_inv(self, x):
+        assert x >= 0 and x <= 1
+        return (1/(1-x))**(1/self.k)
+
+    def sample_pair(self) -> tuple[T, T]:
+        sample1 = random.uniform(0, self.cumulated_bins[-1])
+        idx1 = bisect_left(self.cumulated_bins, sample1)
+        sample2 = random.uniform(0, self.cumulated_bins[-1] - self.bin_sizes[idx1])
+        sample2 = sample2 if idx1 != 0 and sample2 <= self.cumulated_bins[idx1-1] else sample2 + self.bin_sizes[idx1]
+        # sample2 | sample1 is uniformly dstributed except that sample2 has an empty slot where index 1 would live
+        idx2 = bisect_left(self.cumulated_bins, sample2)
+        assert idx1 != idx2
+        return self.arr[idx1], self.arr[idx2]
 
 def generate_human_names(n) -> list[str]:
     l = len(human_names_list)
@@ -33,7 +63,7 @@ def int_to_bytes(x: int) -> bytes:
 def get_size(x: int) -> int:
     return -(int.bit_length(x) // -8)
 
-def int_from_bytes(x: bytes) -> Tuple[int, bool]:
+def int_from_bytes(x: bytes) -> tuple[int, bool]:
     """returns the integer parsed from x and whether the input had the correct (minimal) size"""
     res = int.from_bytes(x)
     return res, get_size(res) == len(x)
@@ -60,6 +90,19 @@ def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #         return False
     pass
 
+def ask_if_remove_dir(directory: str) -> bool:
+    """Returns True if the directory doesn't exist anymore."""
+    if os.path.exists(directory):
+        conf = input(f"the directory {directory} exists already. Replace/remove it? [Y/n] ")
+        if conf.lower() == "y":
+            print(f"deleting directory {directory}")
+            shutil.rmtree(directory)
+            return True
+        else:
+            print("aborting")
+            return False
+    return True
+    
 
 # Source - https://stackoverflow.com/a/287944
 # Posted by joeld, modified by community. See post 'Timeline' for change history
