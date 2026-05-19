@@ -11,7 +11,7 @@ parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
 from common.account import Account, Log, update_frontier
-from common.misc import int_from_bytes
+from common.misc import PerfStatistics, int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
@@ -48,23 +48,28 @@ def parse_tree(id, t: bytes):
     return Tree(id, children)
 
 class GitCliGocVerifier:
-    def __init__(self, git_path: str):
+    def __init__(self, git_path: str, enable_perf_stats: bool):
         self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self._valid_frontier: dict[bytes, dict[bytes, Log]] = {}
         self._forks: dict[bytes, set[bytes]] = {}
-    
+
+        self.perf_statistics = PerfStatistics(enable_perf_stats)
+
     def verify(self):
+        self.perf_statistics.start()
         self._commit_cache = {}
         self._obj_cache = {}
         self._valid_frontier = {}
         self._forks = {}
-    
+
         #self._forks = self.extract_forks()
 
+        self.perf_statistics.start_timer("retrieve_all_commits")
         commits = self.repo.retrieve_all_commits_reverse_topo_order()
+        self.perf_statistics.end_timer("retrieve_all_commits")
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue
@@ -74,17 +79,19 @@ class GitCliGocVerifier:
             delta_acc, err = self.get_delta_acc(commit)
             tmp = self.verify_delta_acc(delta_acc, commit)
             err += tmp
-            
+
             if not (len(msg) > 0 or len(err) > 0):
                 if commit.author_name in self._valid_frontier:
                     update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
                 else:
                     self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit)}
+                self.perf_statistics.start_timer("update_valid_refs")
                 self.repo.update_ref(f"refs/heads/{delta_acc.id.decode()}/validated", commit.id.decode())
-            
+                self.perf_statistics.end_timer("update_valid_refs")
+
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
             if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}:", err)
-        
+        self.perf_statistics.end()
 
     def extract_forks(self) -> dict[bytes, set[bytes]]:
         author_refs = self.repo.retrieve_refnames("refs/heads/*/last")
@@ -100,7 +107,7 @@ class GitCliGocVerifier:
                     child = self.get_commit(child_str)
                     if child.author_name == author:
                         fork_proof.add(child.id)
-                
+
                 if len(fork_proof) > 1:
                     fork_proofs[author] = set(fork_proof)
                     break
@@ -114,8 +121,8 @@ class GitCliGocVerifier:
                 #     pass
                 # previous_children = children
         return fork_proofs
-    
-    def check_if_already_verified(self, commit_ids):
+
+    def check_if_already_verified(self, commit_ids: list[bytes]):
         frontier_commit_ids: set[Log] = set()
         for author in self._valid_frontier:
             frontier_commit_ids.add(self._valid_frontier[author][author])
@@ -123,8 +130,9 @@ class GitCliGocVerifier:
             if not self.repo.is_reachable(c.decode(), list(map(lambda x: x.last_non_forked.id.decode(), frontier_commit_ids))):
                 return False
         return True
-    
+
     def verify_commit(self, c: Commit):
+        self.perf_statistics.start_timer("verify_commit")
         res = []
         name = c.author_name
         email = c.author_email
@@ -140,7 +148,7 @@ class GitCliGocVerifier:
                 res.append(f"author name and prefix of email don't match: author name: {name}, email: {email}")
             if email_suffix != b"gitgen.com":
                 res.append(f"email doesn't have the correct suffix (expected 'gitgen.com'): {email_suffix}")
-        
+
         parent_authors = set()
         first = True
         # print(f"commit {c.id} has following parents:")
@@ -156,14 +164,15 @@ class GitCliGocVerifier:
             if p_name in parent_authors:
                 res.append(f"author {p_name} appears more than once in the parents")
             parent_authors.add(p_name)
-        
+
         # Monotonicity of commit dates of same author
         if name in self._valid_frontier:
             # TODO replace this check with a check on fork_frontier
             last_time = int(self._valid_frontier[name][name].last_non_forked.author_date)
             if last_time > int(c.author_date):
                 res.append(f"author date is not non-decreasing: commit-time of causally older commit: {last_time}, commit-time of causally newer commit: {c.author_date}")
-        
+
+        self.perf_statistics.end_timer("verify_commit")
         return res
 
     def verify_delta_acc(self, a: Account, commit: Commit) -> list[str]:
@@ -172,12 +181,12 @@ class GitCliGocVerifier:
         # field destroyed: check that the balance of the author is non-negative after this operation
         # field acked: check that the newly specified acknowledgements are reflected by a corresponding given field in the giver
         # field given: check that the balance is non-negative after this operation
-        
-        # NOTE: here we know that if any of the fields are their respective default value 
-        #       (`0` for `created` and `destroyed`, `{}` for `acked` and `given`) that 
+
+        # NOTE: here we know that if any of the fields are their respective default value
+        #       (`0` for `created` and `destroyed`, `{}` for `acked` and `given`) that
         #       either it was stored this way in physical storage but got marked as invalid
         #       by `get_delta_acc` or it wasn't stored in the first place which means that
-        #       this field cannot make the account invalid. 
+        #       this field cannot make the account invalid.
         #       This is why we can skip checks on such fields.
         has_created = False
         has_destroyed = False
@@ -202,19 +211,24 @@ class GitCliGocVerifier:
             if a.id in frontier:
                 old_acc = frontier[a.id].account
             else:
-                # This can only happen if the author of the parent is different from the author of this commit. 
+                # This can only happen if the author of the parent is different from the author of this commit.
                 # Will be caught in the Single author check
                 old_acc = Account(commit.author_name)
         if len(commit.parents) > 0:
             # === Valid external dependencies (2P-BFT-Log) ===
+            self.perf_statistics.start_timer("M3")
             if not self.check_if_already_verified(commit.parents):
                 res.append("a parent of commit is not valid")
+            self.perf_statistics.end_timer("M3")
+
             parent_iterator = iter(map(self.get_commit, commit.parents))
             first_parent = next(parent_iterator)
+            self.perf_statistics.start_timer("M2;M4;M7;relevantness;necessity")
             # === Single author check (2P-BFT-Log) ===
             if first_parent.author_name != a.id:
                 res.append("author of first parent not the same as author")
             authors_in_deps = set()
+
             for c in parent_iterator:
                 # === Relevantness of dependencies check ===
                 if c.author_name not in a.acked \
@@ -238,7 +252,9 @@ class GitCliGocVerifier:
                     c = frontier[author].last_non_forked.id
                     if not c in from_cs:
                         res.append(f"dependency {c} not monotonic")
+            self.perf_statistics.end_timer("M2;M4;M7;relevantness;necessity")
 
+        self.perf_statistics.start_timer("d1;d2;d3;d4")
         # === Minimality of delta account checks Part 2 ===
         if has_destroyed:
             if old_acc.destroyed >= a.destroyed:
@@ -256,6 +272,7 @@ class GitCliGocVerifier:
                 if recipient in old_acc.given:
                     if old_acc.given[recipient] >= a.given[recipient]:
                         res.append(f"unnecessary entry in mapping 'given' (GOC not increased for recipient {recipient})")
+
         # === Non-negative balance checks ===
         if has_given or has_destroyed:
             lg = frontier.copy() # TODO avoid this copy (might be trivial, as l might not be used after this point)
@@ -265,19 +282,23 @@ class GitCliGocVerifier:
                     res.append(f"author {a.id} didn't have enough money to give")
                 if has_destroyed:
                     res.append(f"author {a.id} didn't have enough money to destroy")
+
         # === Valid acknowledgements check ===
         if has_acked:
             for author, amount in a.acked.items():
                 if a.id not in frontier[author].account.given or frontier[author].account.given[a.id] < amount:
                     res.append(f"author {a.id} wasn't given the money they acked from {author}")
+        self.perf_statistics.end_timer("d1;d2;d3;d4")
         return res
-    
+
     def recreate_frontier(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
         assert len(commit_ids) > 0
         # TBD maybe use --first-parent to only include the relevant authors into the log!
         # Except maybe when fork detection is necessary, then we need the other authors..
         ledger = {}
+        self.perf_statistics.start_timer("recreate_frontier")
         relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), commit_ids)))
+        self.perf_statistics.end_timer("recreate_frontier")
         for commit_id in relevant_commit_ids:
             commit = self.get_commit(commit_id)
             a, _ = self.get_delta_acc(commit)
@@ -290,11 +311,12 @@ class GitCliGocVerifier:
         c = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
         self._commit_cache[oid] = c
         return c
-    
+
     def get_delta_acc(self, commit: Commit) -> Tuple[Account, list[str]]:
         if commit.id in self._account_cache:
             a, valid = self._account_cache[commit.id]
             return a, [] if valid else ["invalid commit from cache"]
+        self.perf_statistics.start_timer("get_delta_acc")
         a = Account(commit.author_name)
         res = []
         id = commit.tree
@@ -337,12 +359,13 @@ class GitCliGocVerifier:
                 if not at_least_one_entry:
                     res.append("unnecessary field 'given' (empty mapping)")
         self._account_cache[commit.id] = (a, len(res) == 0)
+        self.perf_statistics.end_timer("get_delta_acc")
         return a, res
-    
+
     def retrieve_and_parse_tree(self, tree_id: bytes):
         t = self.repo.retrieve_tree(tree_id.decode())
         return parse_tree(tree_id, t)
-    
+
     def obj_cache_lookup(self, id: bytes) -> Tuple[int, bool]:
         # TODO the boolean value may be unnecessary. can be computed on the fly quite efficiently
         if id in self._obj_cache:
@@ -351,20 +374,22 @@ class GitCliGocVerifier:
             result = int_from_bytes(self.repo.read_blob(id.decode()))
             self._obj_cache[id] = result
         return result
-    
-    def generate_report_files(self):
+
+    def generate_report_files(self, path):
         valid_refs = self.repo.retrieve_ref_commits("refs/heads/*/validated")
         frontier = self.repo.retrieve_ref_commits("refs/heads/*/last")
         if len(valid_refs) == 0:
             raise NotImplementedError("empty valid_refs not handled")
         valid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), valid_refs)))
         invalid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
-        self.repo.write_verification_output(Path(self.repo.git_path).parent, valid, invalid, self._forks)
+        self.repo.write_verification_output(path, valid, invalid, self._forks)
 
-def verify_repo(git_path: str, profile_path: Path | None, generate_report_files: bool):
-    g = GitCliGocVerifier(git_path)
-    if profile_path:
-        path = str(profile_path)
+def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path | None, perf_stats_file: Path | None):
+    generate_stats = not perf_stats_file is None
+    generate_report_files = not report_file_path is None
+    g = GitCliGocVerifier(git_path, generate_stats)
+    if profile_file:
+        path = str(profile_file)
         cProfile.runctx("g.verify()", {}, {"g": g}, path)
         print(f"statistics saved to {path}")
     else:
@@ -372,12 +397,14 @@ def verify_repo(git_path: str, profile_path: Path | None, generate_report_files:
         g.verify()
         print(f"running time: {(time.perf_counter_ns() - start_time) / 1_000_000_000} s")
     if generate_report_files:
-        g.generate_report_files()
+        g.generate_report_files(report_file_path)
+    if generate_stats:
+        return g.perf_statistics.get_times()
 
 def main():
     # TODO add command line option to specify whether or not to profile
-    # TODO add command line option to specify whether or not to 
-    #      generate file of verified commits (for correctness testing) 
+    # TODO add command line option to specify whether or not to
+    #      generate file of verified commits (for correctness testing)
     #      and implement said functionality
     try:
         git_path = sys.argv[1]
@@ -391,7 +418,7 @@ def main():
         exit(2)
     profile = False
     generate_report_files = True
-    verify_repo(git_path, Path("./git-cli.stats"), generate_report_files)
+    verify_repo(git_path, Path("./git-cli.stats"), Path(git_path).parent, Path(git_path).parent / "perf.csv")
 
 if __name__ == "__main__":
     main()

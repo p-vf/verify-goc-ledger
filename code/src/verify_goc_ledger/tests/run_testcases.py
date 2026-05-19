@@ -29,7 +29,7 @@ def main():
             for e in os.listdir(test_dir_full):
                 if os.path.isdir(e):
                     # Run testcase
-                    verify_repo(str(test_dir_full / e), None, True)
+                    verify_repo(str(test_dir_full / e), None, test_dir_full, None)
         except Exception as e:
             import traceback
             print(f"exception raised: \n{bcolors.FAIL + str.join("", traceback.format_tb(e.__traceback__)) + bcolors.ENDC}")
@@ -65,11 +65,12 @@ def main():
             no_failed_testcases += 1
     print("==== TEST RESULTS ====")
     if len(specified_tests) > 0:
-        print(f"WARNING: the specified tests {specified_tests} weren't found")
+        print(bcolors.WARNING + f"WARNING: the specified tests {specified_tests} weren't found" + bcolors.ENDC)
     print(f"passed: {no_passed_testcases}, failed: {no_failed_testcases}")
     if no_failed_testcases == 0:
-        print("all tests passed, hurray!")
+        print(bcolors.OKGREEN + "all tests passed, hurray!" + bcolors.ENDC)
     else:
+        print(bcolors.FAIL + "some tests failed :(" + bcolors.ENDC)
         exit(1)
 
 if __name__ == "__main__":

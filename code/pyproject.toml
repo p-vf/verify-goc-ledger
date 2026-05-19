@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "gitpython>=3.1.49",
     "graphviz>=0.21",
+    "matplotlib>=3.10.9",
     "pygit2>=1.19.2",
     "snakeviz>=2.2.2",
 ]
@@ -21,6 +22,7 @@ generate_testcases = "verify_goc_ledger:tests.gen_testcases.main"
 run_testcases = "verify_goc_ledger:tests.run_testcases.main"
 generate_benchmarks = "verify_goc_ledger:bench.generate_benchmarks.main"
 run_benchmarks = "verify_goc_ledger:bench.run_benchmarks.main"
+visualize_benchmarks = "verify_goc_ledger:bench.visualize_benchmarks.main"
 
 [build-system]
 requires = ["uv_build>=0.9.12,<0.10.0"]

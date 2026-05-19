@@ -63,6 +63,8 @@ class ValidRepoGeneratorV1(BaseRepoGenerator):
             l.remove(giver)
             acker = random.choice(l)
             amount = int(random.random() * giver.balance() * 0.2)
+            if amount == 0:
+                continue
             give_act = giver.give(amount, acker.id)
             ack_act = acker.ack(amount, giver.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
@@ -118,6 +120,8 @@ class ValidRepoGeneratorPareto(BaseRepoGenerator):
             giver = ledger[giver_id.encode()]
             acker = ledger[acker_id.encode()]
             amount = int(random.random() * giver.balance() * 0.2)
+            if amount == 0:
+                continue
             give_act = giver.give(amount, acker.id)
             ack_act = acker.ack(amount, giver.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"

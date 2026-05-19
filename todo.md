@@ -11,7 +11,7 @@
   knows from each other author (could be stored in conjunction with the 
   last ledger state of each author) and then compare any dependencies to
   those. 
-- [ ] benchmarks: track how much time each invariant check takes
+- [x] benchmarks: track how much time each invariant check takes
 
 ### Invariant Checks
 - [ ] implement check of signature

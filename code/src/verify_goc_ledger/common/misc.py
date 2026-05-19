@@ -4,6 +4,7 @@ import subprocess
 from typing import TypeVar, Generic
 import shutil
 import random
+from pathlib import Path
 from bisect import bisect_left
 
 human_names_list = ["alice", "bob", "carol", "dean", "ethan", "felicity", "garreth", "hugh", "illiani", "jace", "kevin", "lance", "marina", "neil", "ondine", "peregrin", "quade", "shane", "tristan", "udelia", "vigo", "waverly", "xavier", "yasmine", "zoe"]
@@ -102,7 +103,52 @@ def ask_if_remove_dir(directory: str) -> bool:
             print("aborting")
             return False
     return True
-    
+
+import time
+class PerfStatistics:
+    def __init__(self, enabled):
+        self.enabled: bool = enabled
+        self.cumulative_times: dict[str, int] = dict()
+        self.start_times: dict[str, int] = dict()
+        self.remaining_time = 0
+        self.remaining_start: None | int = None
+
+    def start(self):
+        assert self.remaining_start is None
+        self.remaining_start = time.perf_counter_ns()
+
+    def start_timer(self, category):
+        if not self.enabled:
+            return
+        assert not category in self.start_times
+        t = time.perf_counter_ns()
+        if not self.start_times:
+            assert self.remaining_start is not None
+            self.remaining_time += t - self.remaining_start
+            self.remaining_start = None
+        self.start_times[category] = t
+
+    def end_timer(self, category):
+        if not self.enabled:
+            return
+        assert category in self.start_times
+        t = time.perf_counter_ns()
+        self.cumulative_times[category] = t - self.start_times[category] + self.cumulative_times.get(category, 0)
+        del self.start_times[category]
+        if not self.start_times:
+            assert self.remaining_start is None
+            self.remaining_start = t
+
+    def end(self):
+        assert self.remaining_start is not None
+        self.remaining_time += time.perf_counter_ns() - self.remaining_start
+
+    def get_times(self):
+        res = dict()
+        for entry in self.cumulative_times:
+            res[entry] = self.cumulative_times[entry] / 1_000_000_000
+        res["REMAINING"] = self.remaining_time / 1_000_000_000
+        return res
 
 # Source - https://stackoverflow.com/a/287944
 # Posted by joeld, modified by community. See post 'Timeline' for change history
