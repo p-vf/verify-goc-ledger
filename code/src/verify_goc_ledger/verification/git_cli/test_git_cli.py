@@ -51,8 +51,11 @@ class GitCliGocVerifier:
     def __init__(self, git_path: str, enable_perf_stats: bool):
         self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
+        self.commit_cache_hits = 0
         self._obj_cache: dict[bytes, tuple[int, bool]] = {}
+        self.obj_cache_hits = 0
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
+        self.account_cache_hits = 0
         self._valid_frontier: dict[bytes, dict[bytes, Log]] = {}
         self._forks: dict[bytes, set[bytes]] = {}
 
@@ -62,6 +65,8 @@ class GitCliGocVerifier:
         self.perf_statistics.start()
         self._commit_cache = {}
         self._obj_cache = {}
+        self._account_cache = {}
+        self.account_cache_hits = 0
         self._valid_frontier = {}
         self._forks = {}
 
@@ -76,7 +81,9 @@ class GitCliGocVerifier:
             commit = parse_commit(c)
             self._commit_cache[commit.id] = commit
             msg = self.verify_commit(commit)
+            self.perf_statistics.start_timer("initial_get_delta_acc")
             delta_acc, err = self.get_delta_acc(commit)
+            self.perf_statistics.end_timer("initial_get_delta_acc")
             tmp = self.verify_delta_acc(delta_acc, commit)
             err += tmp
 
@@ -85,12 +92,15 @@ class GitCliGocVerifier:
                     update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
                 else:
                     self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit)}
-                self.perf_statistics.start_timer("update_valid_refs")
-                self.repo.update_ref(f"refs/heads/{delta_acc.id.decode()}/validated", commit.id.decode())
-                self.perf_statistics.end_timer("update_valid_refs")
 
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
             if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}:", err)
+
+        self.perf_statistics.start_timer("update_valid_refs")
+        for author in self._valid_frontier:
+            log = self._valid_frontier[author][author]
+            self.repo.update_ref(f"refs/heads/{log.author.decode()}/validated", log.last_non_forked.id.decode())
+        self.perf_statistics.end_timer("update_valid_refs")
         self.perf_statistics.end()
 
     def extract_forks(self) -> dict[bytes, set[bytes]]:
@@ -227,8 +237,8 @@ class GitCliGocVerifier:
             # === Single author check (2P-BFT-Log) ===
             if first_parent.author_name != a.id:
                 res.append("author of first parent not the same as author")
-            authors_in_deps = set()
 
+            authors_in_deps = set()
             for c in parent_iterator:
                 # === Relevantness of dependencies check ===
                 if c.author_name not in a.acked \
@@ -295,18 +305,21 @@ class GitCliGocVerifier:
         assert len(commit_ids) > 0
         # TBD maybe use --first-parent to only include the relevant authors into the log!
         # Except maybe when fork detection is necessary, then we need the other authors..
-        ledger = {}
+        frontier: dict[bytes, Log] = {}
         self.perf_statistics.start_timer("recreate_frontier")
         relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), commit_ids)))
         self.perf_statistics.end_timer("recreate_frontier")
+        self.perf_statistics.start_timer("recreate_frontier_for_loop")
         for commit_id in relevant_commit_ids:
             commit = self.get_commit(commit_id)
             a, _ = self.get_delta_acc(commit)
-            update_frontier(a, ledger, commit)
-        return ledger
+            update_frontier(a, frontier, commit)
+        self.perf_statistics.end_timer("recreate_frontier_for_loop")
+        return frontier
 
     def get_commit(self, oid: bytes) -> Commit:
         if oid in self._commit_cache:
+            self.commit_cache_hits += 1
             return self._commit_cache[oid]
         c = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
         self._commit_cache[oid] = c
@@ -315,8 +328,8 @@ class GitCliGocVerifier:
     def get_delta_acc(self, commit: Commit) -> Tuple[Account, list[str]]:
         if commit.id in self._account_cache:
             a, valid = self._account_cache[commit.id]
+            self.account_cache_hits += 1
             return a, [] if valid else ["invalid commit from cache"]
-        self.perf_statistics.start_timer("get_delta_acc")
         a = Account(commit.author_name)
         res = []
         id = commit.tree
@@ -359,7 +372,6 @@ class GitCliGocVerifier:
                 if not at_least_one_entry:
                     res.append("unnecessary field 'given' (empty mapping)")
         self._account_cache[commit.id] = (a, len(res) == 0)
-        self.perf_statistics.end_timer("get_delta_acc")
         return a, res
 
     def retrieve_and_parse_tree(self, tree_id: bytes):
@@ -369,10 +381,10 @@ class GitCliGocVerifier:
     def obj_cache_lookup(self, id: bytes) -> Tuple[int, bool]:
         # TODO the boolean value may be unnecessary. can be computed on the fly quite efficiently
         if id in self._obj_cache:
+            self.obj_cache_hits += 1
             return self._obj_cache[id]
-        else:
-            result = int_from_bytes(self.repo.read_blob(id.decode()))
-            self._obj_cache[id] = result
+        result = int_from_bytes(self.repo.read_blob(id.decode()))
+        self._obj_cache[id] = result
         return result
 
     def generate_report_files(self, path):
@@ -396,6 +408,7 @@ def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path
         start_time = time.perf_counter_ns()
         g.verify()
         print(f"running time: {(time.perf_counter_ns() - start_time) / 1_000_000_000} s")
+    print(f"cache hits:\naccount: {g.account_cache_hits}\ncommit: {g.commit_cache_hits}\nobj: {g.obj_cache_hits}")
     if generate_report_files:
         g.generate_report_files(report_file_path)
     if generate_stats:
