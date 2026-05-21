@@ -106,8 +106,9 @@ def ask_if_remove_dir(directory: str) -> bool:
 
 import time
 class PerfStatistics:
-    def __init__(self, enabled):
+    def __init__(self, enabled, one_timer: bool =True):
         self.enabled: bool = enabled
+        self.one_timer: bool = one_timer
         self.cumulative_times: dict[str, int] = dict()
         self.start_times: dict[str, int] = dict()
         self.remaining_time = 0
@@ -121,6 +122,8 @@ class PerfStatistics:
         if not self.enabled:
             return
         assert not category in self.start_times
+        if self.one_timer:
+            assert not self.start_times
         t = time.perf_counter_ns()
         if not self.start_times:
             assert self.remaining_start is not None
@@ -138,6 +141,8 @@ class PerfStatistics:
         if not self.start_times:
             assert self.remaining_start is None
             self.remaining_start = t
+        if self.one_timer:
+            assert not self.start_times
 
     def end(self):
         assert self.remaining_start is not None
