@@ -11,8 +11,10 @@ from test_git_cli import verify_repo
 def main():
     parser = argparse.ArgumentParser(prog="run_benchmarks", description="Runs Benchmarks")
     parser.add_argument("-p", "--stat-prefix", help="set prefix of profile output", default="")
+    parser.add_argument("--profile", action=argparse.BooleanOptionalAction, help="profile output", default=False)
     parser.add_argument("benches", nargs="*", help="specify what benchmarks to run")
     args = parser.parse_args()
+    profile_output: bool = args.profile
     stat_prefix = args.stat_prefix
     specified_tests = args.benches
     run_all_tests = False
@@ -36,17 +38,21 @@ def main():
                 continue
             print(f"running {e}")
             # Run benchmark
-            new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"))
+            if profile_output:
+                new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"))
+            else:
+                new_row = verify_repo(str(test_dir_full / e), None, None, test_dir_full / (stat_prefix + e + ".csv"))
             assert new_row is not None
             new_row["NAME"] = e
             for fieldname in new_row:
                 if fieldname not in fieldnames:
                     fieldnames.append(fieldname)
             rows.append(new_row)
-        with open(test_dir_full/"perf.csv", "w+") as csvfile:
+        with open(test_dir_full/(stat_prefix + "perf.csv"), "w+") as csvfile:
             w = csv.DictWriter(csvfile, fieldnames)
             w.writeheader()
             w.writerows(rows)
+        print(f"performance statistics saved to {test_dir_full/(stat_prefix + "perf.csv")}")
 
 if __name__ == "__main__":
     main()
