@@ -49,6 +49,8 @@ def generate_human_names(n) -> list[str]:
 def run_cmd(cmd: str | list[str], cwd: str = ".", env=None) -> bytes:
     if env is None:
         env = os.environ
+        if "GIT_DIR" in env:
+            del env["GIT_DIR"]
     shell = isinstance(cmd, str)
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, shell=shell)
     res = proc.communicate()[0]

@@ -3,6 +3,7 @@ import os
 import cProfile
 import time
 from typing import Tuple
+import copy
 
 from pathlib import Path
 
@@ -10,8 +11,8 @@ from common.git_utils import Repo
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
-from common.account import Account, Log, update_frontier
-from common.misc import PerfStatistics, int_from_bytes
+from common.account import Account, Log, update_frontier, Frontier
+from common.misc import PerfStatistics, bcolors, int_from_bytes
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
@@ -84,14 +85,15 @@ class GitCliGocVerifier:
             self.perf_statistics.start_timer("initial_get_delta_acc")
             delta_acc, err = self.get_delta_acc(commit)
             self.perf_statistics.end_timer("initial_get_delta_acc")
-            tmp = self.verify_delta_acc(delta_acc, commit)
-            err += tmp
+            if len(msg) == 0 and len(err) == 0:
+                tmp = self.verify_delta_acc(delta_acc, commit)
+                err += tmp
 
             if not (len(msg) > 0 or len(err) > 0):
                 if commit.author_name in self._valid_frontier:
                     update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
                 else:
-                    self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit)}
+                    self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit, account=delta_acc)}
 
             if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
             if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}:", err)
@@ -186,6 +188,8 @@ class GitCliGocVerifier:
         return res
 
     def verify_delta_acc(self, a: Account, commit: Commit) -> list[str]:
+        """ASSUMPTION this method is only called when the commit isn't invalid yet (relevant for updating `self._valid_frontier`)"""
+        # TODO we can early return as soon as we see the commit isn't valid.
         # if the delta account has non default values, in some fields, the following have to be checked:
         # field created: check that the author is one of the defined creators
         # field destroyed: check that the balance of the author is non-negative after this operation
@@ -217,6 +221,14 @@ class GitCliGocVerifier:
             frontier = {}
             old_acc = Account(commit.author_name)
         else:
+            # === Valid external dependencies (2P-BFT-Log) ===
+            self.perf_statistics.start_timer("M3")
+            already_verified = self.check_if_already_verified(commit.parents)
+            self.perf_statistics.end_timer("M3")
+            if not already_verified:
+                res.append("a parent of commit is not valid")
+                return res
+
             frontier = self.recreate_frontier(commit.parents)
             if a.id in frontier:
                 old_acc = frontier[a.id].account
@@ -224,12 +236,6 @@ class GitCliGocVerifier:
                 # This can only happen if the author of the parent is different from the author of this commit.
                 # Will be caught in the Single author check
                 old_acc = Account(commit.author_name)
-        if len(commit.parents) > 0:
-            # === Valid external dependencies (2P-BFT-Log) ===
-            self.perf_statistics.start_timer("M3")
-            if not self.check_if_already_verified(commit.parents):
-                res.append("a parent of commit is not valid")
-            self.perf_statistics.end_timer("M3")
 
             parent_iterator = iter(map(self.get_commit, commit.parents))
             first_parent = next(parent_iterator)
@@ -299,15 +305,35 @@ class GitCliGocVerifier:
                 if a.id not in frontier[author].account.given or frontier[author].account.given[a.id] < amount:
                     res.append(f"author {a.id} wasn't given the money they acked from {author}")
         self.perf_statistics.end_timer("d1;d2;d3;d4")
+        if len(res) == 0:
+            update_frontier(a, frontier, commit)
+            self._valid_frontier[a.id] = frontier
         return res
 
     def recreate_frontier(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
         assert len(commit_ids) > 0
         # TBD maybe use --first-parent to only include the relevant authors into the log!
         # Except maybe when fork detection is necessary, then we need the other authors..
-        frontier: dict[bytes, Log] = {}
         self.perf_statistics.start_timer("recreate_frontier")
-        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), commit_ids)))
+
+        authors = set([self.get_commit(cid).author_name for cid in commit_ids])
+        authors_to_consider = set.intersection(authors, self._valid_frontier)
+
+        frontier = None
+        commit_ids_set = set(commit_ids)
+        for a in authors_to_consider:
+            if a not in authors:
+                continue
+            last_commit_of_author = self._valid_frontier[a][a].last_non_forked
+            if last_commit_of_author.id in commit_ids_set:
+                commit_ids_set.remove(last_commit_of_author.id)
+                frontier = copy.deepcopy(self._valid_frontier[a]) # TODO avoid this copy
+                break
+
+        frontier = {} if frontier is None else frontier
+        from_commits = list(map(lambda x: x.decode(), commit_ids_set))
+        not_from_commits = list(map(lambda x: frontier[x].last_non_forked.id.decode(), frontier))
+        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(from_commits), not_from_commits)
         self.perf_statistics.end_timer("recreate_frontier")
         self.perf_statistics.start_timer("recreate_frontier_for_loop")
         for commit_id in relevant_commit_ids:
@@ -316,6 +342,31 @@ class GitCliGocVerifier:
             update_frontier(a, frontier, commit)
         self.perf_statistics.end_timer("recreate_frontier_for_loop")
         return frontier
+
+    def merge_frontier(self, frontier_a: Frontier, frontier_b: Frontier):
+        """merge `frontier_a` to `frontier_b`. `frontier_a` gets modified in place"""
+        for author in frontier_b:
+            if author in frontier_a:
+                self.merge_log(frontier_a[author], frontier_b[author])
+            else:
+                frontier_a[author] = frontier_b[author]
+
+    def merge_log(self, log_a: Log, log_b: Log):
+        """`log_a` and `log_b` must have the same author. `log_a` gets modified in place"""
+        assert log_a.author == log_b.author
+        log_a.account.merge(log_b.account)
+        if log_a.fork_frontier:
+            raise NotImplementedError("merge_log")
+        if self.is_reachable_commit(log_a.last_non_forked, log_b.last_non_forked):
+            log_a.last_non_forked = log_b.last_non_forked
+
+    def is_reachable_commit(self, commit_a: Commit, commit_b: Commit):
+        """returns true if `commit_a` is reachable from (or equal to) `commit_b`."""
+        if commit_a.id == commit_b.id:
+            return True
+        if commit_a.id in commit_b.parents:
+            return True
+        return self.repo.is_reachable(commit_a.id.decode(), [commit_b.id.decode()])
 
     def get_commit(self, oid: bytes) -> Commit:
         if oid in self._commit_cache:

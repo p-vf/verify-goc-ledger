@@ -101,6 +101,8 @@ class Repo:
         return commits
     
     def retrieve_reachable_commits_reverse_topo_order(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):
+        if len(from_commits) == 0:
+            return []
         if len(not_from_commits) == 0:
             not_args = ""
         else:

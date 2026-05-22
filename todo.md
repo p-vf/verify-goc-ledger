@@ -5,7 +5,7 @@
   to the description in the paper
   - [x] introduce a new message type (FORK_ACKNOWLEDGEMENT)
   - [x] write down how the example would be correct
-- [ ] verifier: Implement caching of last ledger state of each author
+- [x] verifier: Implement caching of last ledger state of each author
 - [x] verifier: Implement checks for invariant M7 (monotonic dependencies): 
   - To achieve this, one could store the most recent commit this author 
   knows from each other author (could be stored in conjunction with the 

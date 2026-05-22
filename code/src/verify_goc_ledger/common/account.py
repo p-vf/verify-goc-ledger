@@ -3,8 +3,10 @@ from __future__ import annotations
 from common.datastructures import Commit
 
 type Ledger = dict[bytes, Account]
+type Frontier = dict[bytes, Log]
+import copy
 
-def update_frontier(account: Account, frontier: dict[bytes, Log], last_message: Commit):
+def update_frontier(account: Account, frontier: Frontier, last_message: Commit):
     """ASSUMPTION accounts get added in reverse topological order!! (relevant for message_id)"""
     if account.id in frontier:
         frontier[account.id].account.merge(account)
@@ -12,19 +14,22 @@ def update_frontier(account: Account, frontier: dict[bytes, Log], last_message: 
     else:
         frontier[account.id] = Log(account.id, last_message)
         frontier[account.id].last_non_forked = last_message
-        frontier[account.id].account = account
+        frontier[account.id].account = copy.deepcopy(account)
 
 class Log:
-    def __init__(self, author: bytes, last_non_forked: Commit):
+    def __init__(self, author: bytes, last_non_forked: Commit, account=None):
         self.author: bytes = author
-        self.account = Account(author)
+        if account is None:
+            self.account = Account(author)
+        else:
+            self.account = account
         # The following two are assumed to consist of valid commits
         self.last_non_forked: Commit = last_non_forked
         self.fork_frontier: set[Commit] = set()
     
     def __str__(self):
-        return f"Log({self.author}, {self.last_non_forked.id})"
-    
+        return f"Log({self.author}, {self.last_non_forked.id}, {self.account})"
+
     def __repr__(self):
         return self.__str__()
 
@@ -46,12 +51,13 @@ class Account:
         self.given = given
 
     def __repr__(self):
-        return f"{self.id}:\n" +\
-            f"  created: {self.created}\n" +\
-            f"  destroyed: {self.destroyed}\n" +\
-            f"  given: {self.given}\n" +\
-            f"  acked: {self.acked}\n" +\
-            f"  balance: {self.balance()}\n"
+        return f"Account(" +\
+            f"author: {self.id}, " +\
+            f"c: {self.created}, " +\
+            f"d: {self.destroyed}, " +\
+            f"g: {self.given}, " +\
+            f"a: {self.acked}, " +\
+            f"b: {self.balance()})"
 
     def give(self, amount, to_id):
         """returns delta account"""
