@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import csv
 import matplotlib.pyplot as plt
+from matplotlib.transforms import Bbox
 import numpy as np
 import glob
 
@@ -57,7 +58,7 @@ def main():
                         if label == "NAME":
                             continue
                         stat_dict[label] = stat_dict.get(label, []) + [float(row[label])]
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(7,7))
             bottom = np.zeros(len(benchmark_names))
 
             for label, times in stat_dict.items():
@@ -68,7 +69,7 @@ def main():
             p = ax.bar(benchmark_names, stat_dict["REMAINING"], 0.5, label="REMAINING", bottom=(bottom))
 
             ax.set_title(test_dir)
-            ax.legend(loc="best")
+            ax.legend(loc="upper left")
 
             os.makedirs(output_dir_full, exist_ok=True)
             fig_file = output_dir_full / (file_prefix + "plot.pdf")

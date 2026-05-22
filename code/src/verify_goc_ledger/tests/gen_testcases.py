@@ -418,11 +418,11 @@ def generate_testcase_monotonicity_of_deps():
     repo = Repo(str(test_dir/"db"))
     repo.create_repo()
     date = 1774010000
-    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100)
-    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date, created=100)
-    a2 = add_delta_account_as_commit_plumbing(repo, [a1, b1], a, date, given={b.encode(): 10})
-    b2 = add_delta_account_as_commit_plumbing(repo, [b1, a2], b, date, acked={a.encode(): 10})
-    b3 = add_delta_account_as_commit_plumbing(repo, [b2, a1], b, date, given={a.encode(): 10})
+    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100, msg="a1")
+    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date, created=100, msg="b1")
+    a2 = add_delta_account_as_commit_plumbing(repo, [a1, b1], a, date, given={b.encode(): 10}, msg="a2")
+    b2 = add_delta_account_as_commit_plumbing(repo, [b1, a2], b, date, acked={a.encode(): 10}, msg="b2")
+    b3 = add_delta_account_as_commit_plumbing(repo, [b2, a1], b, date, given={a.encode(): 10}, msg="b3")
 
     valid_commits = [a1, b1, a2, b2]
     invalid_commits = [b3]

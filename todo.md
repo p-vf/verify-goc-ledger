@@ -1,17 +1,17 @@
 ### Next steps
-- [x] report: Write down findings for extension of 2P-BFT-Log:
-  - [x] Read the relevant part of the paper carefully
-  - [x] Write down the example and what the problem is, and compare it 
-  to the description in the paper
-  - [x] introduce a new message type (FORK_ACKNOWLEDGEMENT)
-  - [x] write down how the example would be correct
-- [x] verifier: Implement caching of last ledger state of each author
-- [x] verifier: Implement checks for invariant M7 (monotonic dependencies): 
-  - To achieve this, one could store the most recent commit this author 
-  knows from each other author (could be stored in conjunction with the 
-  last ledger state of each author) and then compare any dependencies to
-  those. 
-- [x] benchmarks: track how much time each invariant check takes
+- initial get_delta_acc:
+  - [ ] specify blob content format using some kind of encoding (base64
+  or alike)
+  - [ ] use ls-tree -r to get the blobs
+  - [ ] use cat-file --batch to get the content of the blobs
+- [ ] implement fork check:
+  - [ ] extend repo generation to allow for different message types
+  (fork proof, fork acknowledgement, ledger message)
+  - [ ] extend repo parsing to allow for the different message types
+  - [ ] extend log datastructure to accomodate for forks and their
+  acknowledgement
+  - [ ] implement check itself
+- [ ] implement signature check and check performance differences
 
 ### Invariant Checks
 - [ ] implement check of signature
