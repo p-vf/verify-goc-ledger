@@ -53,7 +53,7 @@ class GitCliGocVerifier:
         self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
         self.commit_cache_hits = 0
-        self._obj_cache: dict[bytes, tuple[int, bool]] = {}
+        self._obj_cache: dict[bytes, tuple[int, str]] = {}
         self.obj_cache_hits = 0
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self.account_cache_hits = 0
@@ -338,7 +338,7 @@ class GitCliGocVerifier:
         self.perf_statistics.start_timer("recreate_frontier_for_loop")
         for commit_id in relevant_commit_ids:
             commit = self.get_commit(commit_id)
-            a, _ = self.get_delta_acc(commit)
+            a, err = self.get_delta_acc(commit)
             update_frontier(a, frontier, commit)
         self.perf_statistics.end_timer("recreate_frontier_for_loop")
         return frontier
@@ -387,39 +387,39 @@ class GitCliGocVerifier:
         new_tree = self.retrieve_and_parse_tree(id)
         # === Minimality of delta account checks Part 1 ===
         for child in new_tree.children:
-            minimal_bytes = True
+            err = ""
             if child.name == b"created":
-                a.created, minimal_bytes = self.obj_cache_lookup(child.id)
+                a.created, err = self.obj_cache_lookup(child.id)
                 if a.created == 0:
                     res.append("unnecessary zero value stored in field 'created'")
             if child.name == b"destroyed":
-                a.destroyed, minimal_bytes = self.obj_cache_lookup(child.id)
+                a.destroyed, err = self.obj_cache_lookup(child.id)
                 if a.destroyed == 0:
                     res.append("unnecessary zero value stored in field 'destroyed'")
-            if not minimal_bytes:
-                res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
+            if len(err) > 0:
+                res.append(f"blob {child.id.decode()}: {err}")
             if child.name == b"acked":
                 at_least_one_entry = False
                 for entry in self.retrieve_and_parse_tree(child.id).children:
                     assert entry.name is not None
-                    a.acked[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
+                    a.acked[entry.name], err = self.obj_cache_lookup(entry.id)
                     at_least_one_entry = True
                     if a.acked[entry.name] == 0:
                         res.append("unnecessary zero value stored in mapping 'acked'")
-                    if not minimal_bytes:
-                        res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
+                    if len(err) > 0:
+                        res.append(f"blob {child.id.decode()}: {err}")
                 if not at_least_one_entry:
                     res.append("unnecessary field 'acked' (empty mapping)")
             if child.name == b"given":
                 at_least_one_entry = False
                 for entry in self.retrieve_and_parse_tree(child.id).children:
                     assert entry.name is not None
-                    a.given[entry.name], minimal_bytes = self.obj_cache_lookup(entry.id)
+                    a.given[entry.name], err = self.obj_cache_lookup(entry.id)
                     at_least_one_entry = True
                     if a.given[entry.name] == 0:
                         res.append("unnecessary zero value stored in mapping 'given'")
-                    if not minimal_bytes:
-                        res.append(f"blob {child.id.decode()} has more than the minimal amount of bytes to represent the data")
+                    if len(err) > 0:
+                        res.append(f"blob {child.id.decode()}: {err}")
                 if not at_least_one_entry:
                     res.append("unnecessary field 'given' (empty mapping)")
         self._account_cache[commit.id] = (a, len(res) == 0)
@@ -429,8 +429,7 @@ class GitCliGocVerifier:
         t = self.repo.retrieve_tree(tree_id.decode())
         return parse_tree(tree_id, t)
 
-    def obj_cache_lookup(self, id: bytes) -> Tuple[int, bool]:
-        # TODO the boolean value may be unnecessary. can be computed on the fly quite efficiently
+    def obj_cache_lookup(self, id: bytes) -> Tuple[int, str]:
         if id in self._obj_cache:
             self.obj_cache_hits += 1
             return self._obj_cache[id]

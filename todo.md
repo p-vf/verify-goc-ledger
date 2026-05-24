@@ -1,6 +1,6 @@
 ### Next steps
 - initial get_delta_acc:
-  - [ ] specify blob content format using some kind of encoding (base64
+  - [x] specify blob content format using some kind of encoding (base64
   or alike)
   - [ ] use ls-tree -r to get the blobs
   - [ ] use cat-file --batch to get the content of the blobs

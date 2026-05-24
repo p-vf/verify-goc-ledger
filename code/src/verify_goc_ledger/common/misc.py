@@ -6,6 +6,7 @@ import shutil
 import random
 from pathlib import Path
 from bisect import bisect_left
+import base64
 
 human_names_list = ["alice", "bob", "carol", "dean", "ethan", "felicity", "garreth", "hugh", "illiani", "jace", "kevin", "lance", "marina", "neil", "ondine", "peregrin", "quade", "shane", "tristan", "udelia", "vigo", "waverly", "xavier", "yasmine", "zoe"]
 
@@ -61,15 +62,21 @@ def run_cmd(cmd: str | list[str], cwd: str = ".", env=None) -> bytes:
     return res
 
 def int_to_bytes(x: int) -> bytes:
-    return int.to_bytes(x, get_size(x))
+    return base64.b85encode(int.to_bytes(x, get_size(x)), pad=False)
 
 def get_size(x: int) -> int:
     return -(int.bit_length(x) // -8)
 
-def int_from_bytes(x: bytes) -> tuple[int, bool]:
+def int_from_bytes(x: bytes) -> tuple[int, str]:
     """returns the integer parsed from x and whether the input had the correct (minimal) size"""
-    res = int.from_bytes(x)
-    return res, get_size(res) == len(x)
+    try:
+        raw = base64.b85decode(x)
+    except:
+        return 0, f"base85 string not valid: {x}"
+    res = int.from_bytes(raw)
+    # res = int.from_bytes(x)
+    return res, "" if get_size(res) == len(raw) else "not minimal amount of bytes"
+
 
 def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #run_cmd("git fsck --no-reflogs --full --dangling --lost-found", "db")
