@@ -195,23 +195,23 @@ def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: st
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_data: TreeDict = {}
     if created is not None:
-        tree_data["created"] = int_to_bytes(created)
+        tree_data["c"] = int_to_bytes(created)
     if destroyed is not None:
-        tree_data["destroyed"] = int_to_bytes(destroyed)
+        tree_data["d"] = int_to_bytes(destroyed)
 
     if given is not None: # if given non-empty
         tree_given: TreeDict = {}
         for account_id, num in given.items():
             assert isinstance(account_id, bytes)
             tree_given[account_id.decode()] = int_to_bytes(num)
-        tree_data["given"] = tree_given
+        tree_data["g"] = tree_given
 
     if acked is not None: # if acked non-empty
         tree_acked: TreeDict = {}
         for account_id, num in acked.items():
             assert isinstance(account_id, bytes)
             tree_acked[account_id.decode()] = int_to_bytes(num)
-        tree_data["acked"] = tree_acked
+        tree_data["a"] = tree_acked
 
     tree_hash = repo.create_tree(tree_data, "account")
     ref_fmt_str = "refs/heads/%s/last"

@@ -388,40 +388,46 @@ class GitCliGocVerifier:
         # === Minimality of delta account checks Part 1 ===
         for child in new_tree.children:
             err = ""
-            if child.name == b"created":
-                a.created, err = self.obj_cache_lookup(child.id)
-                if a.created == 0:
-                    res.append("unnecessary zero value stored in field 'created'")
-            if child.name == b"destroyed":
-                a.destroyed, err = self.obj_cache_lookup(child.id)
-                if a.destroyed == 0:
-                    res.append("unnecessary zero value stored in field 'destroyed'")
-            if len(err) > 0:
-                res.append(f"blob {child.id.decode()}: {err}")
-            if child.name == b"acked":
-                at_least_one_entry = False
-                for entry in self.retrieve_and_parse_tree(child.id).children:
-                    assert entry.name is not None
-                    a.acked[entry.name], err = self.obj_cache_lookup(entry.id)
-                    at_least_one_entry = True
-                    if a.acked[entry.name] == 0:
-                        res.append("unnecessary zero value stored in mapping 'acked'")
+            match child.name:
+                case b"c":
+                    a.created, err = self.obj_cache_lookup(child.id)
+                    if a.created == 0:
+                        res.append("unnecessary zero value stored in field 'created'")
                     if len(err) > 0:
                         res.append(f"blob {child.id.decode()}: {err}")
-                if not at_least_one_entry:
-                    res.append("unnecessary field 'acked' (empty mapping)")
-            if child.name == b"given":
-                at_least_one_entry = False
-                for entry in self.retrieve_and_parse_tree(child.id).children:
-                    assert entry.name is not None
-                    a.given[entry.name], err = self.obj_cache_lookup(entry.id)
-                    at_least_one_entry = True
-                    if a.given[entry.name] == 0:
-                        res.append("unnecessary zero value stored in mapping 'given'")
+                case b"d":
+                    a.destroyed, err = self.obj_cache_lookup(child.id)
+                    if a.destroyed == 0:
+                        res.append("unnecessary zero value stored in field 'destroyed'")
                     if len(err) > 0:
                         res.append(f"blob {child.id.decode()}: {err}")
-                if not at_least_one_entry:
-                    res.append("unnecessary field 'given' (empty mapping)")
+                case b"a":
+                    at_least_one_entry = False
+                    for entry in self.retrieve_and_parse_tree(child.id).children:
+                        assert entry.name is not None
+                        a.acked[entry.name], err = self.obj_cache_lookup(entry.id)
+                        at_least_one_entry = True
+                        if a.acked[entry.name] == 0:
+                            res.append("unnecessary zero value stored in mapping 'acked'")
+                        if len(err) > 0:
+                            res.append(f"blob {child.id.decode()}: {err}")
+                    if not at_least_one_entry:
+                        res.append("unnecessary field 'acked' (empty mapping)")
+                case b"g":
+                    at_least_one_entry = False
+                    for entry in self.retrieve_and_parse_tree(child.id).children:
+                        assert entry.name is not None
+                        a.given[entry.name], err = self.obj_cache_lookup(entry.id)
+                        at_least_one_entry = True
+                        if a.given[entry.name] == 0:
+                            res.append("unnecessary zero value stored in mapping 'given'")
+                        if len(err) > 0:
+                            res.append(f"blob {child.id.decode()}: {err}")
+                    if not at_least_one_entry:
+                        res.append("unnecessary field 'given' (empty mapping)")
+                case x:
+                    res.append(f"there is an unnecessary field in the tree: {x}")
+
         self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res
 
