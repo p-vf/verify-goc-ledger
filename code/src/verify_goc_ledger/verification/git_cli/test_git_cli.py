@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import os
 import cProfile
@@ -7,7 +8,7 @@ import copy
 
 from pathlib import Path
 
-from common.git_utils import Repo
+from common.git_utils import Repo, TreeDict, empty_blob
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
@@ -53,7 +54,7 @@ class GitCliGocVerifier:
         self.repo = Repo(git_path, commit_format=commit_format)
         self._commit_cache: dict[bytes, Commit] = {}
         self.commit_cache_hits = 0
-        self._obj_cache: dict[bytes, tuple[int, str]] = {}
+        self._obj_cache: dict[bytes, bytes] = {}
         self.obj_cache_hits = 0
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self.account_cache_hits = 0
@@ -95,8 +96,8 @@ class GitCliGocVerifier:
                 else:
                     self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit, account=delta_acc)}
 
-            if msg: print(f"failed assertions while parsing commit {commit.id.decode()}:", msg)
-            if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}:", err)
+            if msg: print(f"failed assertions while parsing commit {commit.id.decode()}, (body: {commit.body.decode().strip()}):", msg)
+            if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}, (body: {commit.body.decode().strip()}):", err)
 
         self.perf_statistics.start_timer("update_valid_refs")
         for author in self._valid_frontier:
@@ -384,62 +385,129 @@ class GitCliGocVerifier:
         a = Account(commit.author_name)
         res = []
         id = commit.tree
-        new_tree = self.retrieve_and_parse_tree(id)
+        tree, err = self.retrieve_and_parse_tree_v2(id)
+        if err:
+            return a, err
         # === Minimality of delta account checks Part 1 ===
-        for child in new_tree.children:
+        for child in tree:
             err = ""
-            match child.name:
-                case b"c":
-                    a.created, err = self.obj_cache_lookup(child.id)
-                    if a.created == 0:
-                        res.append("unnecessary zero value stored in field 'created'")
+            match child:
+                case "c":
+                    blob_data = tree[child]
+                    if not isinstance(blob_data, bytes):
+                        res.append("blob expected in field 'c', got something else (probably tree)")
+                        continue
+                    number, err = int_from_bytes(blob_data)
+                    if number == 0:
+                        res.append("unnecessary zero value stored in field 'c'")
                     if len(err) > 0:
-                        res.append(f"blob {child.id.decode()}: {err}")
-                case b"d":
-                    a.destroyed, err = self.obj_cache_lookup(child.id)
-                    if a.destroyed == 0:
-                        res.append("unnecessary zero value stored in field 'destroyed'")
+                        res.append(f"field {child} of tree {id}: {err}")
+                    a.created = number
+                case "d":
+                    blob_data = tree[child]
+                    if not isinstance(blob_data, bytes):
+                        res.append("blob expected in field 'd', got something else (probably tree)")
+                        continue
+                    number, err = int_from_bytes(blob_data)
+                    if number == 0:
+                        res.append("unnecessary zero value stored in field 'd'")
                     if len(err) > 0:
-                        res.append(f"blob {child.id.decode()}: {err}")
-                case b"a":
-                    at_least_one_entry = False
-                    for entry in self.retrieve_and_parse_tree(child.id).children:
-                        assert entry.name is not None
-                        a.acked[entry.name], err = self.obj_cache_lookup(entry.id)
-                        at_least_one_entry = True
-                        if a.acked[entry.name] == 0:
-                            res.append("unnecessary zero value stored in mapping 'acked'")
+                        res.append(f"field {child} of tree {id}: {err}")
+                    a.destroyed = number
+                case "a":
+                    subtree = tree[child]
+                    if not isinstance(subtree, dict):
+                        res.append("tree expected in field 'a', got something else (probably blob)")
+                        continue
+                    if not subtree:
+                        res.append("unnecessary field 'a' (empty mapping)")
+                    for entry in subtree:
+                        blob_data = subtree[entry]
+                        if not isinstance(blob_data, bytes):
+                            res.append("blob expected in field 'a', got something else (probably tree)")
+                            continue
+                        number, err = int_from_bytes(blob_data)
+                        if number == 0:
+                            res.append("unnecessary zero value stored in mapping 'a'")
                         if len(err) > 0:
-                            res.append(f"blob {child.id.decode()}: {err}")
-                    if not at_least_one_entry:
-                        res.append("unnecessary field 'acked' (empty mapping)")
-                case b"g":
-                    at_least_one_entry = False
-                    for entry in self.retrieve_and_parse_tree(child.id).children:
-                        assert entry.name is not None
-                        a.given[entry.name], err = self.obj_cache_lookup(entry.id)
-                        at_least_one_entry = True
-                        if a.given[entry.name] == 0:
-                            res.append("unnecessary zero value stored in mapping 'given'")
+                            res.append(f"field {child}/{entry} of tree {id}: {err}")
+                        a.acked[entry.encode()] = number
+                case "g":
+                    subtree = tree[child]
+                    if not isinstance(subtree, dict):
+                        res.append("tree expected in field 'g', got something else (probably blob)")
+                        continue
+                    if not subtree:
+                        res.append("unnecessary field 'g' (empty mapping)")
+                    for entry in subtree:
+                        blob_data = subtree[entry]
+                        if not isinstance(blob_data, bytes):
+                            res.append("blob expected in field 'g', got something else (probably tree)")
+                            continue
+                        number, err = int_from_bytes(blob_data)
+                        if number == 0:
+                            res.append("unnecessary zero value stored in mapping 'g'")
                         if len(err) > 0:
-                            res.append(f"blob {child.id.decode()}: {err}")
-                    if not at_least_one_entry:
-                        res.append("unnecessary field 'given' (empty mapping)")
+                            res.append(f"field {child}/{entry} of tree {id}: {err}")
+                        a.given[entry.encode()] = number
                 case x:
                     res.append(f"there is an unnecessary field in the tree: {x}")
 
         self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res
 
-    def retrieve_and_parse_tree(self, tree_id: bytes):
-        t = self.repo.retrieve_tree(tree_id.decode())
+    def retrieve_and_parse_tree(self, tree_id: bytes, recursive: bool = False):
+        t = self.repo.retrieve_tree(tree_id.decode(), recursive)
         return parse_tree(tree_id, t)
 
-    def obj_cache_lookup(self, id: bytes) -> Tuple[int, str]:
+    def retrieve_and_parse_tree_v2(self, tree_id: bytes) -> tuple[TreeDict, list[str]]:
+        # TODO add caching to this (_obj_cache)
+        t = self.repo.retrieve_tree(tree_id.decode(), True)
+        env = os.environ
+        if "GIT_DIR" in env:
+            del env["GIT_DIR"]
+        p = None
+        err = []
+        res: TreeDict = {}
+        for child_line in t.splitlines():
+            child_attrs = child_line.split()
+            assert child_attrs[1] == b"blob"
+
+            blob_id = child_attrs[2].decode()
+            if blob_id.encode() in self._obj_cache:
+                blob_content = self._obj_cache[blob_id.encode()].decode()
+            else:
+                blob_content, err = self.repo.read_blob_fast(blob_id)
+                if err is not None:
+                    return {}, [f"error while reading blob {blob_id}: " + err]
+
+            path = child_attrs[3]
+            field_names = path.decode().split("/")
+            assert len(field_names) > 0
+            node = res
+            for name in field_names[:-1]:
+                assert isinstance(node, dict)
+                if name in node:
+                    if not isinstance(node[name], dict):
+                        return {}, [f"field {name} specified multiple times"]
+                    else:
+                        node = node[name]
+                else:
+                    node[name] = {}
+                    node = node[name]
+            assert isinstance(node, dict)
+            if field_names[-1] in node:
+                return {}, [f"field {field_names[-1]} specified multiple times"]
+            node[field_names[-1]] = blob_content.encode()
+        if p is not None:
+            p.terminate()
+        return res, []
+
+    def obj_cache_lookup(self, id: bytes) -> bytes:
         if id in self._obj_cache:
             self.obj_cache_hits += 1
             return self._obj_cache[id]
-        result = int_from_bytes(self.repo.read_blob(id.decode()))
+        result = self.repo.read_blob(id.decode())
         self._obj_cache[id] = result
         return result
 

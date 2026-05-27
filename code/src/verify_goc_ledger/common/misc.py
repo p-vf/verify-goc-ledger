@@ -65,6 +65,8 @@ def int_to_bytes(x: int) -> bytes:
     return base64.b85encode(int.to_bytes(x, get_size(x)), pad=False)
 
 def get_size(x: int) -> int:
+    if x == 0:
+        return 1
     return -(int.bit_length(x) // -8)
 
 def int_from_bytes(x: bytes) -> tuple[int, str]:

@@ -11,8 +11,11 @@ sys.path.insert(0, str(parent_folder))
 from common.misc import run_cmd, validate_hash, int_to_bytes
 from common.account import Account
 
+empty_tree = ""
+empty_blob = ""
 try:
     empty_tree = run_cmd("git mktree </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
+    empty_blob = run_cmd("git hash-object --stdin </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
 except:
     raise Exception("outside a git repository")
 
@@ -23,6 +26,11 @@ class Repo:
         self.commit_format = commit_format
         self.keydir = keydir
         self.git_path = git_path
+        self._blob_reading_proc = None
+
+    def __del__(self):
+        if self._blob_reading_proc is not None:
+            self._blob_reading_proc.terminate()
 
     def create_commit(self, tree: str, parents: list[str], author_name: str, message: str|None =None, date: str|None =None):
         if message is None:
@@ -112,11 +120,52 @@ class Repo:
     def retrieve_single_commit(self, commit_id: str):
         return run_cmd(f"git show --no-patch --format={self.commit_format} {commit_id}", cwd=self.git_path)
     
-    def retrieve_tree(self, tree_id: str):
-        return run_cmd(f"git ls-tree {tree_id}", self.git_path)
+    def retrieve_tree(self, tree_id: str, recursive: bool = False):
+        flag = ""
+        if recursive:
+            flag = " -r"
+        return run_cmd(f"git ls-tree {tree_id}{flag}", self.git_path)
     
     def read_blob(self, blob_id: str):
         return run_cmd(f"git cat-file -p {blob_id}", self.git_path)
+
+    def read_blob_fast(self, blob_id: str) -> tuple[str, str | None]:
+        """
+        This is a faster implementation of read_blob, with certain
+        restrictions. <br>In order for the content of the blob to be
+        valid, it must be encodable to utf-8 and must not contain any
+        newline characters ('\\n' or '\\r'). Encoding binary information
+        can be achieved using a base64 encoding or alike.
+
+        Returns: a tuple containing the contents of the
+        blob as a string and a string containing an error message if
+        there was any.
+
+        BUG: this blocks indefinitely if there are certain bytes in the
+        blob, for example the byte '\\r' causes this problem."""
+        # TODO implement tests (a repo that contains all possible bytes
+        # in blobs) to check whether this blocks indefinitely. It seems
+        # to block at `p.readlines(2)` if there is a carriage return in
+        # the blob.
+        if blob_id == empty_blob:
+            return "", None
+        env = os.environ
+        if "GIT_DIR" in env:
+            del env["GIT_DIR"]
+        if self._blob_reading_proc is None:
+            self._blob_reading_proc = subprocess.Popen("git cat-file --batch=''", shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=2, text=True, env=env, cwd=self.git_path)
+        p = self._blob_reading_proc
+        assert p.stdin is not None and p.stdout is not None
+        p.stdin.write(blob_id + "\n")
+        try:
+            lines = p.stdout.readlines(2)
+        except UnicodeDecodeError:
+            return "", f"encoding error"
+        if len(lines) != 2:
+            return "", f"invalid content (may contain newline)"
+        _, blob_content = lines
+        blob_content = blob_content.strip()
+        return blob_content, None
     
     def retrieve_refnames(self, refspec):
         return run_cmd(f"git for-each-ref '--format=%(refname)' {refspec}", self.git_path).splitlines()
