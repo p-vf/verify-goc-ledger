@@ -6,7 +6,7 @@
   - [x] use cat-file --batch to get the content of the blobs (see
     [Notes](#notes) on `read_blob_fast`)
 - [ ] implement fork check:
-  - [ ] extend repo generation to allow for different message types
+  - [x] extend repo generation to allow for different message types
   (fork proof, fork acknowledgement, ledger message)
   - [ ] extend repo parsing to allow for the different message types
   - [ ] extend log data structure to accommodate for forks and their

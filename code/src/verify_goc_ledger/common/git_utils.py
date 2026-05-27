@@ -32,11 +32,17 @@ class Repo:
         if self._blob_reading_proc is not None:
             self._blob_reading_proc.terminate()
 
-    def create_commit(self, tree: str, parents: list[str], author_name: str, message: str|None =None, date: str|None =None):
+    def create_commit(self, tree: str, parents: list[str], author_name: str, date: int, message: str|None =None, sign = True):
+        """
+        Create a commit with the given attributes. `date` is a unix timestamp.
+        If `sign` is `True` and the attribute `keydir` was defined, the created
+        commit is signed with the identity given by author_name, otherwise it
+        isn't.
+        """
         if message is None:
             message = " "
         cmd = ["git"]
-        if self.keydir is not None:
+        if sign and self.keydir is not None:
             cmd += ["-c", f"user.signingkey={self.keydir/author_name}.pub"]
         cmd += ["commit-tree", tree, "-m", message]
         if self.keydir is not None:
@@ -46,8 +52,8 @@ class Repo:
             cmd += ["-p", p]
         env = os.environ
         if date is not None:
-            env["GIT_AUTHOR_DATE"] = date
-            env["GIT_COMMITTER_DATE"] = date
+            env["GIT_AUTHOR_DATE"] = f"{date} +0100"
+            env["GIT_COMMITTER_DATE"] = f"{date} +0100"
         env["GIT_AUTHOR_NAME"] = author_name
         env["GIT_AUTHOR_EMAIL"] = author_name + "@gitgen.com"
         env["GIT_COMMITTER_NAME"] = author_name
@@ -203,7 +209,6 @@ class Repo:
     def write_verification_output_expected(self, test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}):
         self.write_verification_output(test_dir, valid, invalid, forks, "expected_")
 
-
 date = 1774010000
 
 def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):
@@ -240,6 +245,8 @@ def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[st
     date += 1
     return add_delta_account_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
 
+ref_fmt_last = "refs/heads/%s/last"
+
 def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict[bytes, int] | None = None, given: dict[bytes, int] | None = None):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_data: TreeDict = {}
@@ -263,16 +270,21 @@ def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: st
         tree_data["a"] = tree_acked
 
     tree_hash = repo.create_tree(tree_data, "account")
-    ref_fmt_str = "refs/heads/%s/last"
-    commit_hash = repo.create_commit(tree_hash, deps, author, msg, date=f"{date} +0100").decode()
+    commit_hash = repo.create_commit(tree_hash, deps, author, date, msg).decode()
     repo.reset_index()
-    repo.update_ref(ref_fmt_str % author, commit_hash)
+    repo.update_ref(ref_fmt_last % author, commit_hash)
     return commit_hash
 
-def add_fork_proof_as_commit(repo: Repo, parents: list[str], author: str, forked_author: str, date: int):
-    # TODO must author and fork author be the same?
-    commit_hash = repo.create_commit(empty_tree, parents, author, "FORK_PROOF", date=f"{date} +0100").decode()
-    last_id = repo.retrieve_single_commit(f"refs/heads/{forked_author}/last")
-    repo.update_ref(f"refs/heads/{forked_author}/forks/{last_id}", commit_hash)
+fork_proof_author_name = "FORK_PROOF"
+fork_ack_msg = "FORK_ACK"
+def add_fork_proof(repo: Repo, forked_commits: list[str], date: int):
+    return repo.create_commit(empty_tree, forked_commits, fork_proof_author_name, date, sign=False).decode()
 
-    
+def add_fork_ack(repo: Repo, author: str, fork_proof_ids: list[str], date: int):
+    previous = repo.show_ref(ref_fmt_last % author)
+    return add_fork_ack_plumbing(repo, author, previous + fork_proof_ids, date)
+
+def add_fork_ack_plumbing(repo: Repo, author: str, parents: list[str], date: int):
+    commit_hash = repo.create_commit(empty_tree, parents, author, date, fork_ack_msg).decode()
+    repo.update_ref(ref_fmt_last % author, commit_hash)
+    return commit_hash

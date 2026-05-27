@@ -23,10 +23,10 @@ from common.datastructures import Commit, Child, Tree
 #     frontier[commit.author_name] = commit
 
 commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%B"
-def parse_commit(c: bytes):
+def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
     fields = c.split(b":")
     if len(fields) != 10:
-        raise Exception(f"expected length 10 of commit fields. input: {c}")
+        return None, "invalid format of commit (there was a ':' too much)"
     assert len(fields) == 10
     id = fields[0]
     tree = fields[1]
@@ -38,7 +38,7 @@ def parse_commit(c: bytes):
     committer_email = fields[7]
     committer_date = fields[8]
     body = fields[9]
-    return Commit(id, tree, parents, author_name, author_email, author_date, committer_name, committer_email, committer_date, body)
+    return Commit(id, tree, parents, author_name, author_email, author_date, committer_name, committer_email, committer_date, body), None
 
 def parse_tree(id, t: bytes):
     """parameter t must be the output of git ls-tree"""
@@ -80,8 +80,12 @@ class GitCliGocVerifier:
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue
-            commit = parse_commit(c)
-            self._commit_cache[commit.id] = commit
+            commit, t = parse_commit(c)
+            commit_id = c.split(b":", 1)[0]
+            if commit is None:
+                print(f"failed to parse commit with id {commit_id.decode()}: {t}")
+                continue
+            self._commit_cache[commit_id] = commit
             msg = self.verify_commit(commit)
             self.perf_statistics.start_timer("initial_get_delta_acc")
             delta_acc, err = self.get_delta_acc(commit)
@@ -373,7 +377,10 @@ class GitCliGocVerifier:
         if oid in self._commit_cache:
             self.commit_cache_hits += 1
             return self._commit_cache[oid]
-        c = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
+        # TODO invalid commits should be handled here
+        c, _ = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
+        if c is None:
+            raise Exception(f"Commit {oid.decode()} invalid")
         self._commit_cache[oid] = c
         return c
 
