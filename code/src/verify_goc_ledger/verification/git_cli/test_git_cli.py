@@ -83,25 +83,27 @@ class GitCliGocVerifier:
             commit, t = parse_commit(c)
             commit_id = c.split(b":", 1)[0]
             if commit is None:
-                print(f"failed to parse commit with id {commit_id.decode()}: {t}")
+                print(f"failed to deserialize commit {commit_id.decode()}: {t}")
                 continue
             self._commit_cache[commit_id] = commit
             msg = self.verify_commit(commit)
+            if msg:
+                print(f"failed checks while checking commit {commit.id.decode()}, (body: {commit.body.decode().strip()}):", msg)
+                continue
             self.perf_statistics.start_timer("initial_get_delta_acc")
             delta_acc, err = self.get_delta_acc(commit)
             self.perf_statistics.end_timer("initial_get_delta_acc")
-            if len(msg) == 0 and len(err) == 0:
+            if not err:
                 tmp = self.verify_delta_acc(delta_acc, commit)
                 err += tmp
+            if err:
+                print(f"failed checks from commit {commit.id.decode()} (body: {commit.body}) as delta account: {err}")
+                continue
 
-            if not (len(msg) > 0 or len(err) > 0):
-                if commit.author_name in self._valid_frontier:
-                    update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
-                else:
-                    self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit, account=delta_acc)}
-
-            if msg: print(f"failed assertions while parsing commit {commit.id.decode()}, (body: {commit.body.decode().strip()}):", msg)
-            if err: print(f"failed assertions while checking other invariants on commit {commit.id.decode()}, (body: {commit.body.decode().strip()}):", err)
+            if commit.author_name in self._valid_frontier:
+                update_frontier(delta_acc, self._valid_frontier[commit.author_name], commit)
+            else:
+                self._valid_frontier[commit.author_name] = {commit.author_name: Log(commit.author_name, commit, account=delta_acc)}
 
         self.perf_statistics.start_timer("update_valid_refs")
         for author in self._valid_frontier:
