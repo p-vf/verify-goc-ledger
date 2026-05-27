@@ -44,6 +44,10 @@ def main():
         print(test_dir_full)
         assert os.path.isdir(test_dir_full)
         print(f"visualizing benchmark '{test_dir}':")
+        max_time = 0
+        stat_dicts: list[dict] = []
+        benchmark_namess: list[list[str]] = []
+        file_prefixes: list[str] = []
         for file in glob.glob(str(test_dir_full/"*perf.csv")):
             file_prefix = file.removeprefix(str(test_dir_full/"")).removesuffix("perf.csv")[1:]
             if not (visualize_all_prefixes or file_prefix in stat_prefix):
@@ -58,15 +62,43 @@ def main():
                         if label == "NAME":
                             continue
                         stat_dict[label] = stat_dict.get(label, []) + [float(row[label])]
+            stat_dicts.append(stat_dict)
+            benchmark_namess.append(benchmark_names)
+            file_prefixes.append(file_prefix)
+
+            bottom = np.zeros(len(benchmark_names))
+
+            for label, times in stat_dict.items():
+                if label == "REMAINING":
+                    continue
+                bottom += np.array(times)
+
+            max_time_from_this_category = bottom.max()
+
+            assert isinstance(max_time_from_this_category, float)
+
+            if max_time < max_time_from_this_category:
+                max_time = max_time_from_this_category
+
+        for benchmark_names, stat_dict, file_prefix in zip(benchmark_namess, stat_dicts, file_prefixes):
             fig, ax = plt.subplots(figsize=(7,7))
+            ax.set_ylim(ymax=max_time*1.05)
+            ax.set_xmargin(0.15)
             bottom = np.zeros(len(benchmark_names))
 
             for label, times in stat_dict.items():
                 if label == "REMAINING":
                     continue
                 p = ax.bar(benchmark_names, times, 0.5, label=label, bottom=(bottom))
+                for i, val in enumerate(times):
+                    if val < max_time * 0.02:
+                        continue
+                    ax.text(i, bottom[i] + val / 2, f"{val:.3}", va='center', ha='center')
                 bottom += np.array(times)
             p = ax.bar(benchmark_names, stat_dict["REMAINING"], 0.5, label="REMAINING", bottom=(bottom))
+            for i, val in enumerate(stat_dict["REMAINING"]):
+                time = y=bottom[i] + val
+                ax.text(i, time, f"{time:.3}", fontdict=None, va='bottom', ha='center')
 
             ax.set_title(test_dir)
             ax.legend(loc="upper left")
