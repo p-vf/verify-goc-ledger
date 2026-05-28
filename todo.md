@@ -11,8 +11,23 @@
   - [x] extend repo parsing to allow for the different message types
   - [ ] extend log data structure to accommodate for forks and their
   acknowledgement
-  - [ ] implement check itself
+    - [ ] add and correctly update a valid fork frontier to each log that
+          keeps track of all valid messages after a fork
+    - [ ] add a list of verified fork proofs to the verifier
+    - [ ] change check_if_already_verified to take the valid fork frontiers of
+          all logs and the list of verified fork proofs into account
+    - [ ] somehow add a fork_acknowledgement field that keeps track of what forks
+          the author has acknowledged
+  - [ ] implement checks that must be satisfied when considering forks
+    - [x] check for valid fork proof commits
+    - [ ] check for valid fork acknowledgements
+    - [ ] if there is a fork that the author has not acknowledged, the author
+          must - in the next non-delta_account message - acknowledge said fork
 - [ ] implement signature check and check performance differences
+  - the signature only has to be checked on commits that are of type FORK_ACK
+    or DELTA_ACC
+  - if a message is invalid but signed correctly, we have to handle this somehow
+    differently (update a git reference that tracks the invalid commit)
 
 ### Invariant Checks
 - [ ] implement check of signature
@@ -20,14 +35,8 @@
 
 ### Features of repo generation
 - [ ] introduce root message type (start of a log)
-- [ ] allow generation of fork proofs
-- [x] allow generation of empty delta account as git objects
-- [x] allow generation of empty given/acked fields in delta account as git 
-  objects
 
 ### Chores
-- [x] replace all instances of "delta state" with "delta account" where 
-it makes sense
 - [ ] replace variables of type `bytes` with variables of type `str` 
 where it makes sense
 - [ ] generation of repos: prevent git from creating unnecessary hooks (scripts)
