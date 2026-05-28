@@ -14,7 +14,7 @@ parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
 from common.account import Account, Log, MessageType, Frontier
-from common.misc import PerfStatistics, bcolors, get_some_entry, int_from_bytes, run_cmd
+from common.misc import PerfStatistics, bcolors, get_some_entry, int_from_bytes, pformat_commit_id, run_cmd
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
@@ -87,7 +87,6 @@ class GitCliGocVerifier:
             if commit is None:
                 print(f"failed to deserialize commit {commit_id.decode()}: {t}")
                 continue
-            print(f"considering {commit}")
             self._commit_cache[commit_id] = commit
             msg_type = self.get_msg_type(commit)
             match msg_type:
@@ -102,8 +101,17 @@ class GitCliGocVerifier:
                     if err:
                         print(f"failed checks on fork ack {commit}: {err}")
                         continue
+                    acknowledged_forks = set(map(lambda p: self.get_commit(self.get_commit(p).parents[0]), commit.parents[1:]))
+                    frontier = self.recreate_frontier(commit.parents)
+                    for forked_commit in acknowledged_forks:
+                        log = frontier[forked_commit.author_name]
+                        if forked_commit == log.last_non_forked:
+                            log.acked_last_non_forked = True
+                    self.update_frontier(None, frontier, commit)
+                    self.current_frontiers[commit.author_name] = frontier
                     self.update_valid_frontier(commit)
                 case MessageType.DELTA_ACC:
+                    # if there have been unacked forks, declare this as invalid
                     err = self.verify_commit(commit)
                     if err:
                         print(f"failed checks on commit {commit}: {commit.body.decode().strip()}):", err)
@@ -114,7 +122,15 @@ class GitCliGocVerifier:
                     if err:
                         print(f"failed checks on commit {commit} while parsing delta account: {err}")
                         continue
+                    assert delta_acc is not None
                     frontier = self.recreate_frontier(commit.parents)
+                    err = []
+                    for log in frontier.values():
+                        if not log.acked_last_non_forked:
+                            err.append(f"author {commit.author_name} didn't ack forked commit {log.last_non_forked}")
+                    if err:
+                        print(f"failed checks on commit {commit}: {err}")
+                        continue
                     err = self.verify_delta_acc(delta_acc, commit, frontier)
                     if err:
                         print(f"failed checks on commit {commit} as delta account: {err}")
@@ -201,10 +217,10 @@ class GitCliGocVerifier:
         if not self.get_commit(commit.parents[0]).author_name == commit.author_name:
             return [f"first parent not the same author"]
         res = []
-        for commit_id in commit.parents:
+        for commit_id in commit.parents[1:]:
             curr_commit = self.get_commit(commit_id)
             if self.get_msg_type(curr_commit) != MessageType.FORK_PROOF:
-                res.append([f"{curr_commit} is not a fork proof"])
+                res.append(f"{pformat_commit_id(curr_commit.id)} is not a fork proof")
         if res:
             return res
         if not self.check_if_already_verified(commit.parents):
@@ -393,7 +409,7 @@ class GitCliGocVerifier:
 
         # === Non-negative balance checks ===
         if has_given or has_destroyed:
-            lg = copy.deepcopy(frontier) # TODO avoid this copy (might be trivial, as l might not be used after this point)
+            lg = copy.deepcopy(frontier) # TODO avoid this copy (might be trivial, as frontier might not be used after this point)
             self.update_frontier(a, lg, commit)
             if lg[a.id].account.balance() < 0:
                 if has_given:
@@ -442,17 +458,19 @@ class GitCliGocVerifier:
         self.perf_statistics.end_timer("recreate_frontier_for_loop")
         return frontier
 
-    def update_frontier(self, account: Account, frontier: Frontier, last_message: Commit):
+    def update_frontier(self, account: Account | None, frontier: Frontier, last_message: Commit):
         # print(f"updating frontier {frontier} with {account}, {last_message}")
         """ASSUMPTION accounts get added in reverse topological order!! (relevant for message_id)"""
-        if account.id in frontier:
-            self.update_log(frontier[account.id], last_message, account)
+        author = last_message.author_name
+        if author in frontier:
+            self.update_log(frontier[last_message.author_name], last_message, account)
         else:
-            frontier[account.id] = Log(account.id, last_message)
-            frontier[account.id].last_non_forked = last_message
-            frontier[account.id].account = copy.deepcopy(account)
+            frontier[author] = Log(author, last_message)
+            frontier[author].last_non_forked = last_message
+            frontier[author].account = copy.deepcopy(account)
 
-    def update_log(self, log_a: Log, commit: Commit, account: Account):
+    def update_log(self, log_a: Log, commit: Commit, account: Account | None):
+        assert (account is None) == (self.get_msg_type(commit) == MessageType.FORK_ACK), f"expected this equality to hold.. {self.get_msg_type(commit)}"
         assert log_a.author == commit.author_name
         assert len(commit.parents) > 0, "commit has no parents"
         if not log_a.fork_proof:
@@ -461,12 +479,18 @@ class GitCliGocVerifier:
             #     print("\n".join(traceback.format_stack()))
             if log_a.last_non_forked.id == commit.parents[0]:
                 log_a.last_non_forked = commit
-                log_a.account.merge(account)
+                if account is not None:
+                    log_a.account.merge(account)
             else:
                 log_a.last_non_forked, log_a.fork_proof = self.find_fork_proof(set([commit, log_a.last_non_forked]), log_a.author.decode())
+                log_a.acked_last_non_forked = False
+                # TODO check that this is the correct way of updating the account
+                if account is not None:
+                    log_a.account.merge(account)
         else:
             # TODO check that this is the correct way of updating the account
-            log_a.account.merge(account)
+            if account is not None:
+                log_a.account.merge(account)
             if commit.parents[0] == get_some_entry(log_a.fork_proof).id:
                 log_a.fork_proof.add(commit)
             elif self.repo.is_reachable(commit.parents[0].decode(), map(lambda x: x.id.decode(), log_a.fork_proof)):
@@ -502,7 +526,8 @@ class GitCliGocVerifier:
         self._commit_cache[oid] = c
         return c
 
-    def get_delta_acc(self, commit: Commit) -> Tuple[Account, list[str]]:
+    def get_delta_acc(self, commit: Commit) -> Tuple[Account | None, list[str]]:
+        if self.get_msg_type(commit) != MessageType.DELTA_ACC: return None, []
         if commit.id in self._account_cache:
             a, valid = self._account_cache[commit.id]
             self.account_cache_hits += 1

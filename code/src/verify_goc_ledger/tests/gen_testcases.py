@@ -43,6 +43,7 @@ def main():
     generate_testcase_fork_invalid_proof_different_author_1()
     generate_testcase_fork_invalid_proof_different_author_2()
     generate_testcase_fork_invalid_proof_parents_not_same_parent()
+    generate_testcase_fork_communication_after_fork_known()
     generate_testcase_fork_valid()
 
 def generate_testcase_relevant_dependencies():
@@ -406,7 +407,7 @@ def generate_testcase_fork_invalid_1():
     a2 = add_delta_account_as_commit_plumbing(repo, [a1, b3], a, date, acked={b.encode(): 100}, msg="a2")
     a3 = add_delta_account_as_commit_plumbing(repo, [a2, c2], a, date, given={c.encode(): 100}, msg="a3") # since a knows about c2, it must also know about b2 and since it also knows about b3, it knows about the fork.
 
-    valid_commits = [a1, b1, c1, b2, b3, a2]
+    valid_commits = [a1, b1, c1, b2, b3, a2, c2]
     invalid_commits = [a3]
 
     repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
@@ -479,10 +480,36 @@ def generate_testcase_fork_invalid_proof_parents_not_same_parent():
     c2 = add_delta_account_as_commit_plumbing(repo, [c1, b2], c, date, acked={b.encode(): 100}, msg="c2")
     fp = add_fork_proof(repo, [b2, b4], date)
     a4 = add_fork_ack(repo, a, [fp], date)
-    c2 = add_fork_ack(repo, c, [fp], date)
+    c3 = add_fork_ack(repo, c, [fp], date)
 
-    valid_commits = [a1, b1, c1, b2, b3, a2, b4]
-    invalid_commits = [fp, a4, c2]
+    valid_commits = [a1, b1, c1, b2, b3, a2, b4, c2]
+    invalid_commits = [fp, a4, c3]
+
+    repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
+
+def generate_testcase_fork_communication_after_fork_known():
+    test_dir = Path("./testcases/fork_communication_after_fork_known")
+    if os.path.exists(test_dir):
+        print(f"directory {test_dir} exists already, not generating.")
+        return
+
+    a, b, c = generate_human_names(3)
+    repo = Repo(str(test_dir/"db"))
+    repo.create_repo()
+    date = 1774010000
+    a1 = add_delta_account_as_commit_plumbing(repo, [], a, date, created=100, msg="a1")
+    b1 = add_delta_account_as_commit_plumbing(repo, [], b, date, created=100, msg="b1")
+    c1 = add_delta_account_as_commit_plumbing(repo, [], c, date, created=100, msg="c1")
+    b2 = add_delta_account_as_commit_plumbing(repo, [b1, c1], b, date, given={c.encode(): 100}, msg="b2")
+    b3 = add_delta_account_as_commit_plumbing(repo, [b1, a1], b, date, given={a.encode(): 50}, msg="b3")
+    a2 = add_delta_account_as_commit_plumbing(repo, [a1, b3], a, date, acked={b.encode(): 50}, msg="a2")
+    c2 = add_delta_account_as_commit_plumbing(repo, [c1, b2], c, date, acked={b.encode(): 100}, msg="c2")
+    fp = add_fork_proof(repo, [b2, b3], date)
+    a4 = add_fork_ack(repo, a, [fp], date)
+    a5 = add_delta_account_as_commit_plumbing(repo, [a4, b3], a, date, given={b.encode(): 1}, msg="a5")
+
+    valid_commits = [a1, b1, c1, b2, b3, a2, c2, fp, a4]
+    invalid_commits = [a5]
 
     repo.write_verification_output_expected(test_dir, list(map(lambda x: x.encode(), valid_commits)), list(map(lambda x: x.encode(), invalid_commits)))
 

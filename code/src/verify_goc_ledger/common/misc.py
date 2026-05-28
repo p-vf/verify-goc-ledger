@@ -93,7 +93,7 @@ def int_from_bytes(x: bytes) -> tuple[int, str]:
     # res = int.from_bytes(x)
     return res, "" if get_size(res) == len(raw) else "not minimal amount of bytes"
 
-def get_some_entry(s: set):
+def get_some_entry(s: set[T]) -> T:
     """
     Retrieve an arbitrary element from set `s` without removing it from `s`.
 
