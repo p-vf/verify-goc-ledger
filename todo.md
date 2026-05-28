@@ -8,7 +8,7 @@
 - [ ] implement fork check:
   - [x] extend repo generation to allow for different message types
   (fork proof, fork acknowledgement, ledger message)
-  - [ ] extend repo parsing to allow for the different message types
+  - [x] extend repo parsing to allow for the different message types
   - [ ] extend log data structure to accommodate for forks and their
   acknowledgement
   - [ ] implement check itself
@@ -40,3 +40,4 @@ transactions per author (heavy-tailed).
 ### Notes
 - The implementation of `read_blob_fast` is buggy: It blocks whenever some
   bytes are in the blob, for example '\\r'.
+- What invariants hold for the GOC-Ledger after a fork?

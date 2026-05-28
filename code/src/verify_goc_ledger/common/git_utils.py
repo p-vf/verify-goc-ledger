@@ -4,10 +4,11 @@ import sys
 import pprint
 
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Iterable
 parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
+from common.datastructures import Commit
 from common.misc import run_cmd, validate_hash, int_to_bytes
 from common.account import Account
 
@@ -179,7 +180,7 @@ class Repo:
     def retrieve_ref_commits(self, refspec):
         return run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
     
-    def is_reachable(self, commit: str, from_commits: list[str]):
+    def is_reachable(self, commit: str, from_commits: Iterable[str]):
         if commit in from_commits:
             return True
         # here we print all the commits that are reachable from c through parent-child edges 
@@ -188,8 +189,8 @@ class Repo:
         result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits)}", cwd=self.git_path)
         return result != b""
     
-    def run_git_cmd(self, cmd):
-        return run_cmd(f"git {cmd}", self.git_path).splitlines()
+    def run_cmd(self, cmd):
+        return run_cmd(cmd, self.git_path)
 
     def write_verification_output(self, test_dir: Path, valid: list[bytes] | None =None, invalid: list[bytes] | None =None, forks: dict[bytes, set[bytes]] = {}, prefix: str = ""):
         if valid is not None and invalid is not None:

@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from common.datastructures import Commit
+from enum import Enum
+from common.misc import pformat_commit_id
 
 type Ledger = dict[bytes, Account]
 type Frontier = dict[bytes, Log]
 import copy
 
-def update_frontier(account: Account, frontier: Frontier, last_message: Commit):
-    """ASSUMPTION accounts get added in reverse topological order!! (relevant for message_id)"""
-    if account.id in frontier:
-        frontier[account.id].account.merge(account)
-        frontier[account.id].last_non_forked = last_message
-    else:
-        frontier[account.id] = Log(account.id, last_message)
-        frontier[account.id].last_non_forked = last_message
-        frontier[account.id].account = copy.deepcopy(account)
+class MessageType(Enum):
+    DELTA_ACC = 1
+    FORK_PROOF = 2
+    FORK_ACK = 3
 
 class Log:
     def __init__(self, author: bytes, last_non_forked: Commit, account=None):
@@ -25,10 +22,12 @@ class Log:
             self.account = account
         # The following two are assumed to consist of valid commits
         self.last_non_forked: Commit = last_non_forked
-        self.fork_frontier: set[Commit] = set()
-    
+        self.fork_proof: set[Commit] = set()
+        # TODO extend this with a "fork frontier" or something with which we can
+        # check whether commits have been validated after a fork (check_if_already_verified)
+
     def __str__(self):
-        return f"Log({self.author}, {self.last_non_forked.id}, {self.account})"
+        return f"Log(author: {self.author}, last: {pformat_commit_id(self.last_non_forked.id)}, fork_proof: {self.fork_proof}, {self.account})"
 
     def __repr__(self):
         return self.__str__()
@@ -85,7 +84,7 @@ class Account:
 
     def balance(self):
         return self.created - self.destroyed + sum(self.acked.values()) - sum(self.given.values())
-    
+
     def merge(self, other: Account):
         # print(f"called merge with {other!r}")
         # print(f"before: {self!r}")
@@ -108,4 +107,4 @@ class Account:
             else:
                 self.given[name] = amount
         # print(f"after: {self!r}")
-                
+

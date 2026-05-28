@@ -37,6 +37,9 @@ class ParetoSampler(Generic[T]):
         assert idx1 != idx2
         return self.arr[idx1], self.arr[idx2]
 
+def pformat_commit_id(commit_id: bytes):
+    return commit_id[:8].decode()
+
 def generate_human_names(n) -> list[str]:
     l = len(human_names_list)
     if n <= l:
@@ -79,6 +82,15 @@ def int_from_bytes(x: bytes) -> tuple[int, str]:
     # res = int.from_bytes(x)
     return res, "" if get_size(res) == len(raw) else "not minimal amount of bytes"
 
+def get_some_entry(s: set):
+    """
+    Retrieve an arbitrary element from set `s` without removing it from `s`.
+
+    Source - https://stackoverflow.com/a/59841
+    Posted by Blair Conrad, modified by community. See post 'Timeline' for change history
+    Retrieved 2026-05-27, License - CC BY-SA 3.0
+    """
+    return next(iter(s))
 
 def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #run_cmd("git fsck --no-reflogs --full --dangling --lost-found", "db")
