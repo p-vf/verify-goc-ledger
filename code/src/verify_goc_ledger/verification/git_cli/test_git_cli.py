@@ -98,8 +98,11 @@ class GitCliGocVerifier:
                         continue
                     self.update_valid_frontier(commit)
                 case MessageType.FORK_ACK:
-                    # TODO handle correct fork proof
-                    pass
+                    err = self.verify_fork_ack(commit)
+                    if err:
+                        print(f"failed checks on fork ack {commit}: {err}")
+                        continue
+                    self.update_valid_frontier(commit)
                 case MessageType.DELTA_ACC:
                     err = self.verify_commit(commit)
                     if err:
@@ -183,8 +186,30 @@ class GitCliGocVerifier:
                 res.append("grandparent not consistent")
         return res
 
-    def verify_fork_acknowledgement(self, commit: Commit) -> list[str]:
-        raise NotImplementedError("verify_fork_acknowledgement")
+    def verify_fork_ack(self, commit: Commit) -> list[str]:
+        """
+        Checks invariants on `commit`, assuming that `commit` represents a
+        fork acknowledgement. Invariants include:
+        - TODO: check the signature of the commit
+        - the parent commits are valid messages
+        - the commit has at least 2 parents
+        - the first parent commit is from the same author as `commit`
+        - the other parent commits are fork proofs
+        """
+        if len(commit.parents) < 2:
+            return [f"less than 2 parents"]
+        if not self.get_commit(commit.parents[0]).author_name == commit.author_name:
+            return [f"first parent not the same author"]
+        res = []
+        for commit_id in commit.parents:
+            curr_commit = self.get_commit(commit_id)
+            if self.get_msg_type(curr_commit) != MessageType.FORK_PROOF:
+                res.append([f"{curr_commit} is not a fork proof"])
+        if res:
+            return res
+        if not self.check_if_already_verified(commit.parents):
+            return [f"there are invalid parent commits"]
+        return []
 
     def extract_forks(self) -> dict[bytes, set[bytes]]:
         author_refs = self.repo.retrieve_refnames("refs/heads/*/last")

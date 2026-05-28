@@ -13,15 +13,15 @@
         acknowledgement
     - [x] add and correctly update a valid frontier that
           keeps track of all valid messages even after a fork
-    - [ ] change check_if_already_verified to take the new valid frontier and
+    - [x] change check_if_already_verified to take the new valid frontier and
           the list of verified fork proofs into account
     - [ ] somehow add a fork_acknowledgement field that keeps track of what forks
           the author has acknowledged
   - [ ] implement checks that must be satisfied when considering forks
     - [x] check for valid fork proof commits
-    - [ ] check for valid fork acknowledgements
+    - [x] check for valid fork acknowledgements
     - [ ] if there is a fork that the author has not acknowledged, the author
-          must - in the next non-delta_account message - acknowledge said fork
+          must - in the next message - acknowledge said fork
 - [ ] implement signature check and check performance differences
   - the signature only has to be checked on commits that are of type FORK_ACK
     or DELTA_ACC
