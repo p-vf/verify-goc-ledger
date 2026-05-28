@@ -181,12 +181,13 @@ class Repo:
         return run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
     
     def is_reachable(self, commit: str, from_commits: Iterable[str]):
-        if commit in from_commits:
+        from_commits_set = set(from_commits)
+        if commit in from_commits_set:
             return True
         # here we print all the commits that are reachable from c through parent-child edges 
         #   and are reachable from any commit in `from_commits` through child-parent edges
         # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
-        result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits)}", cwd=self.git_path)
+        result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits_set)}", cwd=self.git_path)
         return result != b""
     
     def run_cmd(self, cmd):

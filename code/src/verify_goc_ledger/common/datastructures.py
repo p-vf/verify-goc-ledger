@@ -16,6 +16,14 @@ class Commit:
     def author_committer_equal(self):
         return self.author_name == self.committer_name and self.author_email == self.committer_email and self.author_date == self.committer_date
 
+    def __eq__(self, other):
+        if type(other) != type(self):
+            return False
+        return self.id == other.id
+
+    def __hash__(self):
+        return hash(self.id)
+
     def __repr__(self):
         return self.__str__()
 

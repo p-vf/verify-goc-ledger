@@ -1,3 +1,4 @@
+import pprint
 import sys
 import os
 import cProfile
@@ -58,7 +59,8 @@ class GitCliGocVerifier:
         self.obj_cache_hits = 0
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self.account_cache_hits = 0
-        self._valid_frontier: dict[bytes, dict[bytes, Log]] = {}
+        self.current_frontiers: dict[bytes, dict[bytes, Log]] = {}
+        self.valid_commit_frontier: set[Commit] = set()
         self._forks: dict[bytes, set[bytes]] = {}
 
         self.perf_statistics = PerfStatistics(enable_perf_stats)
@@ -69,7 +71,7 @@ class GitCliGocVerifier:
         self._obj_cache = {}
         self._account_cache = {}
         self.account_cache_hits = 0
-        self._valid_frontier = {}
+        self.current_frontiers = {}
         self._forks = {}
 
         #self._forks = self.extract_forks()
@@ -85,6 +87,7 @@ class GitCliGocVerifier:
             if commit is None:
                 print(f"failed to deserialize commit {commit_id.decode()}: {t}")
                 continue
+            print(f"considering {commit}")
             self._commit_cache[commit_id] = commit
             msg_type = self.get_msg_type(commit)
             match msg_type:
@@ -92,7 +95,8 @@ class GitCliGocVerifier:
                     err = self.verify_fork_proof_commit(commit)
                     if err:
                         print(f"failed checks on fork proof {commit}: {err}")
-                    # TODO handle correct fork proof
+                        continue
+                    self.update_valid_frontier(commit)
                 case MessageType.FORK_ACK:
                     # TODO handle correct fork proof
                     pass
@@ -113,12 +117,17 @@ class GitCliGocVerifier:
                         print(f"failed checks on commit {commit} as delta account: {err}")
                         continue
                     self.update_frontier(delta_acc, frontier, commit)
-                    self._valid_frontier[delta_acc.id] = frontier
+                    self.current_frontiers[delta_acc.id] = frontier
+                    self.update_valid_frontier(commit)
 
         self.perf_statistics.start_timer("update_valid_refs")
-        for author in self._valid_frontier:
-            log = self._valid_frontier[author][author]
-            self.repo.update_ref(f"refs/heads/{log.author.decode()}/validated", log.last_non_forked.id.decode())
+        for author in self.current_frontiers:
+            log = self.current_frontiers[author][author]
+            commit_id = log.last_non_forked.id
+            self.valid_commit_frontier.discard(self.get_commit(commit_id))
+            self.repo.update_ref(f"refs/heads/{log.author.decode()}/validated", commit_id.decode())
+        for commit in self.valid_commit_frontier:
+            self.repo.update_ref(f"refs/heads/other/validated/{commit.id.decode()}", commit.id.decode())
         self.perf_statistics.end_timer("update_valid_refs")
         self.perf_statistics.end()
 
@@ -128,6 +137,16 @@ class GitCliGocVerifier:
         if commit.body.strip().startswith(fork_ack_msg.encode()):
             return MessageType.FORK_ACK
         return MessageType.DELTA_ACC
+
+    def update_valid_frontier(self, commit: Commit):
+        self.valid_commit_frontier.add(commit)
+        if len(commit.parents) == 0:
+            self.valid_commit_frontier.add(commit)
+        else:
+            pc = self.get_commit(commit.parents[0])
+            if pc in self.valid_commit_frontier:
+                self.valid_commit_frontier.remove(pc)
+            self.valid_commit_frontier.add(commit)
 
     def verify_fork_proof_commit(self, commit: Commit) -> list[str]:
         """
@@ -197,11 +216,8 @@ class GitCliGocVerifier:
         return fork_proofs
 
     def check_if_already_verified(self, commit_ids: list[bytes]):
-        frontier_commit_ids: set[Log] = set()
-        for author in self._valid_frontier:
-            frontier_commit_ids.add(self._valid_frontier[author][author])
         for c in commit_ids:
-            if not self.repo.is_reachable(c.decode(), list(map(lambda x: x.last_non_forked.id.decode(), frontier_commit_ids))):
+            if not self.repo.is_reachable(c.decode(), map(lambda x: x.id.decode(), self.valid_commit_frontier)):
                 return False
         return True
 
@@ -240,9 +256,9 @@ class GitCliGocVerifier:
             parent_authors.add(p_name)
 
         # Monotonicity of commit dates of same author
-        if name in self._valid_frontier:
+        if name in self.current_frontiers:
             # TODO replace this check with a check on fork_frontier
-            last_time = int(self._valid_frontier[name][name].last_non_forked.author_date)
+            last_time = int(self.current_frontiers[name][name].last_non_forked.author_date)
             if last_time > int(c.author_date):
                 res.append(f"author date is not non-decreasing: commit-time of causally older commit: {last_time}, commit-time of causally newer commit: {c.author_date}")
 
@@ -375,17 +391,17 @@ class GitCliGocVerifier:
         self.perf_statistics.start_timer("recreate_frontier")
 
         authors = set([self.get_commit(cid).author_name for cid in commit_ids])
-        authors_to_consider = set.intersection(authors, self._valid_frontier)
+        authors_to_consider = set.intersection(authors, self.current_frontiers)
 
         frontier = None
         commit_ids_set = set(commit_ids)
         for a in authors_to_consider:
             if a not in authors:
                 continue
-            last_commit_of_author = self._valid_frontier[a][a].last_non_forked
+            last_commit_of_author = self.current_frontiers[a][a].last_non_forked
             if last_commit_of_author.id in commit_ids_set:
                 commit_ids_set.remove(last_commit_of_author.id)
-                frontier = copy.deepcopy(self._valid_frontier[a]) # TODO avoid this copy
+                frontier = copy.deepcopy(self.current_frontiers[a]) # TODO avoid this copy
                 break
 
         frontier = {} if frontier is None else frontier

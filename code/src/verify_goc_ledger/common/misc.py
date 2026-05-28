@@ -38,7 +38,18 @@ class ParetoSampler(Generic[T]):
         return self.arr[idx1], self.arr[idx2]
 
 def pformat_commit_id(commit_id: bytes):
-    return commit_id[:8].decode()
+    colors = ["\033[90m", "\033[92m", "\033[93m", "\033[94m", "\033[95m", "\033[96m"]
+    bgcolors = ["\033[40m", "\033[42m", "\033[43m", "\033[44m", "\033[45m", "\033[46m"]
+    h = hash(tuple(commit_id))
+    color_idx = h % len(colors)
+    color = colors[color_idx]
+    bgcolor_idx = h//len(colors) % (len(bgcolors) - 1)
+    if bgcolor_idx >= color_idx:
+        bgcolor_idx += 1
+    bgcolor = bgcolors[bgcolor_idx]
+    bold = bcolors.BOLD if h % 2 == 0 else ""
+    underline = bcolors.UNDERLINE if h//2 % 2 == 0 else ""
+    return color + bgcolor + bold + underline + commit_id[:8].decode() + bcolors.ENDC
 
 def generate_human_names(n) -> list[str]:
     l = len(human_names_list)

@@ -10,12 +10,11 @@
   (fork proof, fork acknowledgement, ledger message)
   - [x] extend repo parsing to allow for the different message types
   - [ ] extend log data structure to accommodate for forks and their
-  acknowledgement
-    - [ ] add and correctly update a valid fork frontier to each log that
-          keeps track of all valid messages after a fork
-    - [ ] add a list of verified fork proofs to the verifier
-    - [ ] change check_if_already_verified to take the valid fork frontiers of
-          all logs and the list of verified fork proofs into account
+        acknowledgement
+    - [x] add and correctly update a valid frontier that
+          keeps track of all valid messages even after a fork
+    - [ ] change check_if_already_verified to take the new valid frontier and
+          the list of verified fork proofs into account
     - [ ] somehow add a fork_acknowledgement field that keeps track of what forks
           the author has acknowledged
   - [ ] implement checks that must be satisfied when considering forks
