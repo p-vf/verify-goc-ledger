@@ -1,7 +1,6 @@
 import subprocess
 import os
 import sys
-import pprint
 
 from pathlib import Path
 from typing import Sequence, Iterable
@@ -9,7 +8,7 @@ parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
 from common.datastructures import Commit
-from common.misc import run_cmd, validate_hash, int_to_bytes
+from common.misc import run_cmd, int_to_bytes
 from common.account import Account
 
 empty_tree = ""
@@ -48,7 +47,7 @@ class Repo:
         cmd += ["commit-tree", tree, "-m", message]
         if self.keydir is not None:
             cmd += ["-S"]
-        
+
         for p in parents:
             cmd += ["-p", p]
         env = os.environ
@@ -74,7 +73,7 @@ class Repo:
 
     def create_tree(self, data: TreeDict, dir: str) -> str:
         return self._create_tree_internal([dir], data)[0]
-        
+
     def _create_tree_internal(self, path: list[str], data: TreeDict) -> tuple[str, int]:
         added_entries = 0
         cacheinfo_opts = ""
@@ -96,7 +95,7 @@ class Repo:
             assert len(path) > 0, "path must have positive length"
             res = run_cmd(f"git write-tree --missing-ok --prefix={str.join("/", path)}/", self.git_path)
         return bytes.strip(res).decode(), added_entries
-    
+
     def reset_index(self):
         run_cmd("git rm --cached -r --ignore-unmatch .", self.git_path)
 
@@ -107,14 +106,14 @@ class Repo:
 
     def update_ref(self, ref: str, hash: str):
         return run_cmd(f"git update-ref {ref} {hash}", self.git_path).decode().splitlines()
-    
+
     def retrieve_all_commits_reverse_topo_order(self):
         format_str = "--format=" + self.commit_format + " "
         commits = run_cmd(f"git log --all {format_str}--reverse -z --topo-order", cwd=self.git_path).split(b"\0")
         if len(commits) >= 1 and commits[-1] == b'':
             return commits[:-1]
         return commits
-    
+
     def retrieve_reachable_commits_reverse_topo_order(self, from_commits: Sequence[str], not_from_commits: Sequence[str] = []):
         if len(from_commits) == 0:
             return []
@@ -123,16 +122,16 @@ class Repo:
         else:
             not_args = f" ^{str.join(" ^", not_from_commits)}"
         return run_cmd(f"git rev-list --reverse --topo-order {str.join(" ", from_commits)}{not_args}", cwd=self.git_path).splitlines()
-    
+
     def retrieve_single_commit(self, commit_id: str):
         return run_cmd(f"git show --no-patch --format={self.commit_format} {commit_id}", cwd=self.git_path)
-    
+
     def retrieve_tree(self, tree_id: str, recursive: bool = False):
         flag = ""
         if recursive:
             flag = " -r"
         return run_cmd(f"git ls-tree {tree_id}{flag}", self.git_path)
-    
+
     def read_blob(self, blob_id: str):
         return run_cmd(f"git cat-file -p {blob_id}", self.git_path)
 
@@ -173,23 +172,23 @@ class Repo:
         _, blob_content = lines
         blob_content = blob_content.strip()
         return blob_content, None
-    
+
     def retrieve_refnames(self, refspec):
         return run_cmd(f"git for-each-ref '--format=%(refname)' {refspec}", self.git_path).splitlines()
 
     def retrieve_ref_commits(self, refspec):
         return run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
-    
+
     def is_reachable(self, commit: str, from_commits: Iterable[str]):
         from_commits_set = set(from_commits)
         if commit in from_commits_set:
             return True
-        # here we print all the commits that are reachable from c through parent-child edges 
+        # here we print all the commits that are reachable from c through parent-child edges
         #   and are reachable from any commit in `from_commits` through child-parent edges
         # if there are no such commits, this means c is either in the frontier or after. however we know here that c is not in the frontier so if result is empty, we know that c happened after the frontier.
         result = run_cmd(f"git rev-list -n 1 --ancestry-path={commit} ^{commit} {str.join(" ", from_commits_set)}", cwd=self.git_path)
         return result != b""
-    
+
     def run_cmd(self, cmd):
         return run_cmd(cmd, self.git_path)
 

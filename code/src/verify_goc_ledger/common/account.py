@@ -6,7 +6,6 @@ from common.misc import pformat_commit_id
 
 type Ledger = dict[bytes, Account]
 type Frontier = dict[bytes, Log]
-import copy
 
 class MessageType(Enum):
     DELTA_ACC = 1

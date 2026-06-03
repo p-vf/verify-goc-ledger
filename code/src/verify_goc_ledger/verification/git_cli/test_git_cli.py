@@ -1,34 +1,32 @@
-import pprint
 import sys
 import os
 import cProfile
 import time
-import traceback
 from typing import Tuple
 import copy
 
 from pathlib import Path
 
-from common.git_utils import Repo, TreeDict, empty_blob, fork_proof_author_name, fork_ack_msg
+from common.git_utils import Repo, TreeDict, fork_proof_author_name, fork_ack_msg
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
 from common.account import Account, Log, MessageType, Frontier
-from common.misc import PerfStatistics, bcolors, get_some_entry, int_from_bytes, pformat_commit_id, run_cmd
+from common.misc import PerfStatistics, get_some_entry, int_from_bytes, pformat_commit_id, run_cmd
 
 usage_str = f"usage: {sys.argv[0]} <git-directory>"
 
-from common.datastructures import Commit, Child, Tree
+from common.datastructures import Commit
 
 # def update_ledger(commit: Commit, frontier: dict[bytes, Commit]):
 #     frontier[commit.author_name] = commit
 
 commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%B"
+num_fields = len(commit_format.split(":"))
 def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
     fields = c.split(b":")
-    if len(fields) != 10:
+    if len(fields) != num_fields:
         return None, "invalid format of commit (there was a ':' too much)"
-    assert len(fields) == 10
     id = fields[0]
     tree = fields[1]
     parents = fields[2].split(b" ") if len(fields[2]) > 0 else []
@@ -38,17 +36,12 @@ def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
     committer_name = fields[6]
     committer_email = fields[7]
     committer_date = fields[8]
+    if author_name  != committer_name  or\
+       author_email != committer_email or\
+       author_date  != committer_date:
+        return None, "author and committer not equal"
     body = fields[9]
-    return Commit(id, tree, parents, author_name, author_email, author_date, committer_name, committer_email, committer_date, body), None
-
-def parse_tree(id, t: bytes):
-    """parameter t must be the output of git ls-tree"""
-    children = []
-    for l in t.splitlines():
-        rest, child_name = l.split(b"\t", 1)
-        _, child_type, child_id = rest.split(b" ", 2)
-        children.append(Child(child_id, child_type, child_name))
-    return Tree(id, children)
+    return Commit(id, tree, parents, author_name, author_email, author_date, body), None
 
 class GitCliGocVerifier:
     def __init__(self, git_path: str, enable_perf_stats: bool):
@@ -82,22 +75,31 @@ class GitCliGocVerifier:
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue
-            commit, t = parse_commit(c)
+            commit, err = parse_commit(c)
             commit_id = c.split(b":", 1)[0]
-            if commit is None:
-                print(f"failed to deserialize commit {commit_id.decode()}: {t}")
+            if err or commit is None:
+                print(f"failed to deserialize commit {commit_id.decode()}: {err}")
                 continue
             self._commit_cache[commit_id] = commit
             msg_type = self.get_msg_type(commit)
             match msg_type:
                 case MessageType.FORK_PROOF:
+                    err = self.verify_commit_basic(commit)
+                    if err:
+                        print(f"failed basic checks on fork proof {commit}: {err}")
+                        continue
                     err = self.verify_fork_proof_commit(commit)
                     if err:
                         print(f"failed checks on fork proof {commit}: {err}")
                         continue
                     self.update_valid_frontier(commit)
                 case MessageType.FORK_ACK:
-                    err = self.verify_fork_ack(commit)
+                    # TODO check signature
+                    err = self.verify_commit_basic(commit)
+                    if err:
+                        print(f"failed basic checks on fork ack {commit}: {err}")
+                        continue
+                    err = self.verify_fork_ack_commit(commit)
                     if err:
                         print(f"failed checks on fork ack {commit}: {err}")
                         continue
@@ -111,10 +113,10 @@ class GitCliGocVerifier:
                     self.current_frontiers[commit.author_name] = frontier
                     self.update_valid_frontier(commit)
                 case MessageType.DELTA_ACC:
-                    # if there have been unacked forks, declare this as invalid
-                    err = self.verify_commit(commit)
+                    # TODO check signature
+                    err = self.verify_commit_basic(commit)
                     if err:
-                        print(f"failed checks on commit {commit}: {commit.body.decode().strip()}):", err)
+                        print(f"failed checks on commit {commit}: {err}")
                         continue
                     self.perf_statistics.start_timer("initial_get_delta_acc")
                     delta_acc, err = self.get_delta_acc(commit)
@@ -138,6 +140,8 @@ class GitCliGocVerifier:
                     self.update_frontier(delta_acc, frontier, commit)
                     self.current_frontiers[delta_acc.id] = frontier
                     self.update_valid_frontier(commit)
+                case x:
+                    assert False, f"case {x} not handled"
 
         self.perf_statistics.start_timer("update_valid_refs")
         for author in self.current_frontiers:
@@ -202,7 +206,7 @@ class GitCliGocVerifier:
                 res.append("grandparent not consistent")
         return res
 
-    def verify_fork_ack(self, commit: Commit) -> list[str]:
+    def verify_fork_ack_commit(self, commit: Commit) -> list[str]:
         """
         Checks invariants on `commit`, assuming that `commit` represents a
         fork acknowledgement. Invariants include:
@@ -227,48 +231,23 @@ class GitCliGocVerifier:
             return [f"there are invalid parent commits"]
         return []
 
-    def extract_forks(self) -> dict[bytes, set[bytes]]:
-        author_refs = self.repo.retrieve_refnames("refs/heads/*/last")
-        fork_proofs = {}
-        for author_ref in author_refs:
-            author = bytes.removesuffix(bytes.removeprefix(author_ref, b"refs/heads/"), b"/last")
-            commits_and_children = self.repo.run_cmd(f"git rev-list --author={author.decode()} --all --children --reverse").splitlines()
-            # previous_children = None
-            for commit_and_children in commits_and_children:
-                fork_proof = set()
-                _, *children = bytes.split(commit_and_children, b" ")
-                for child_str in children:
-                    child = self.get_commit(child_str)
-                    if child.author_name == author:
-                        fork_proof.add(child.id)
-
-                if len(fork_proof) > 1:
-                    fork_proofs[author] = set(fork_proof)
-                    break
-
-                # This would probably be a more efficient way to get ANY fork, but not necessarily the first one
-                # if previous_children is None:
-                #     continue
-                # commit, *children = bytes.split(b"", commit_and_children)
-                # if commit not in previous_children:
-                #     # found fork! however, this doesn't guarantee that this is the first fork..
-                #     pass
-                # previous_children = children
-        return fork_proofs
-
     def check_if_already_verified(self, commit_ids: list[bytes]):
         for c in commit_ids:
             if not self.repo.is_reachable(c.decode(), map(lambda x: x.id.decode(), self.valid_commit_frontier)):
                 return False
         return True
 
-    def verify_commit(self, c: Commit):
+    def verify_commit_basic(self, c: Commit) -> list[str]:
+        """
+        Checks the things that all the commits must satisfy.
+        At the moment only the format of the email is checked.
+        If we add more basic things to check for (for example the format
+        of user names) this can be done here.
+        """
         self.perf_statistics.start_timer("verify_commit")
         res = []
         name = c.author_name
         email = c.author_email
-        if not c.author_committer_equal():
-            res.append("author and committer not equal")
         email_split = email.split(b"@", 1)
         if len(email_split) != 2:
             res.append(f"email has invalid format: {email}")
@@ -279,29 +258,6 @@ class GitCliGocVerifier:
                 res.append(f"author name and prefix of email don't match: author name: {name}, email: {email}")
             if email_suffix != b"gitgen.com":
                 res.append(f"email doesn't have the correct suffix (expected 'gitgen.com'): {email_suffix}")
-
-        parent_authors = set()
-        first = True
-        # print(f"commit {c.id} has following parents:")
-        for p in c.parents:
-            # print(f"  {p.id}")
-            # verify that first parent has same author as c
-            parent = self.get_commit(p)
-            if first and parent.author_name != name:
-                res.append(f"first parent {parent.id} does not have the same author")
-            first = False
-            p_name = parent.author_name
-            # verify that each author is in the parent commits at most once
-            if p_name in parent_authors:
-                res.append(f"author {p_name} appears more than once in the parents")
-            parent_authors.add(p_name)
-
-        # Monotonicity of commit dates of same author
-        if name in self.current_frontiers:
-            # TODO replace this check with a check on fork_frontier
-            last_time = int(self.current_frontiers[name][name].last_non_forked.author_date)
-            if last_time > int(c.author_date):
-                res.append(f"author date is not non-decreasing: commit-time of causally older commit: {last_time}, commit-time of causally newer commit: {c.author_date}")
 
         self.perf_statistics.end_timer("verify_commit")
         return res
@@ -358,6 +314,11 @@ class GitCliGocVerifier:
             parent_iterator = iter(map(self.get_commit, commit.parents))
             first_parent = next(parent_iterator)
             self.perf_statistics.start_timer("M2;M4;M7;relevantness;necessity")
+
+            # === dates Non-decreasing ===
+            if first_parent.author_date > commit.author_date:
+                res.append("dates not non-decreasing")
+
             # === Single author check (2P-BFT-Log) ===
             if first_parent.author_name != a.id:
                 res.append("author of first parent not the same as author")
@@ -606,10 +567,6 @@ class GitCliGocVerifier:
         self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res
 
-    def retrieve_and_parse_tree(self, tree_id: bytes, recursive: bool = False):
-        t = self.repo.retrieve_tree(tree_id.decode(), recursive)
-        return parse_tree(tree_id, t)
-
     def retrieve_and_parse_tree_v2(self, tree_id: bytes) -> tuple[TreeDict, list[str]]:
         # TODO add caching to this (_obj_cache)
         t = self.repo.retrieve_tree(tree_id.decode(), True)
@@ -628,6 +585,7 @@ class GitCliGocVerifier:
                 blob_content = self._obj_cache[blob_id.encode()].decode()
             else:
                 blob_content, err = self.repo.read_blob_fast(blob_id)
+                self._obj_cache[blob_id.encode()] = blob_content.encode()
                 if err is not None:
                     return {}, [f"error while reading blob {blob_id}: " + err]
 

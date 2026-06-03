@@ -2,8 +2,6 @@ import os
 from pathlib import Path
 import argparse
 from typing import Any
-import matplotlib.pyplot as plt
-import numpy as np
 import csv
 
 from test_git_cli import verify_repo

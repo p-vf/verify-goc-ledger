@@ -1,6 +1,5 @@
 from main import ValidRepoGeneratorV1, ValidRepoGeneratorPareto, ValidRepoGeneratorParetoAckDelayed
 from pathlib import Path
-import os
 
 def main():
     valid_v1_path = Path(f"./benchmarks/valid_v1/")
