@@ -1,10 +1,16 @@
 ### Next steps
+- general:
+  - [ ] identify the messy parts of the codebase
+  - [ ] clean up found messy parts
 - initial get_delta_acc:
-  - [x] specify blob content format using some kind of encoding (base64
-  or alike)
-  - [x] use ls-tree -r to get the blobs
-  - [x] use cat-file --batch to get the content of the blobs (see
-    [Notes](#notes) on `read_blob_fast`)
+  - [ ] implement the retrieval of the blobs with push-stream modules
+    - structure of the first push-stream: `treedict = push(commit_id -> subprocess "git ls-tree -r" -> splitline -> validate_treeline_syntax_and_parse[tuple[Bid, Path]] -> reduce_to_dict[dict[Bid, set[Path]]])` (could also be implemented without push-stream using subprocess.Popen.communicate)
+    - structure of the second push-stream: `parsed_tree = values(treedict) -> subprocess "git cat-file --batch" -> blob_parser[tuple[Bid, Content]] -> decode_blob -> reduce_to_dict_2(treedict)[dict[Path, int]]`
+      - `blob_parser` can be implemented using a map module with an impure
+        function (a class implementing the `__call__` method)
+    - [ ] integrate the push-stream modules from Erick's repository
+    - [ ] implement the second push-stream
+    - [ ] implement the first push-stream (maybe)
 - [ ] implement fork check:
   - [x] extend repo generation to allow for different message types
   (fork proof, fork acknowledgement, ledger message)
