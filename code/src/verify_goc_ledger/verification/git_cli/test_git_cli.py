@@ -4,6 +4,12 @@ import cProfile
 import time
 from typing import Tuple
 import copy
+import pushstream
+from pushstream.producer import Values
+from pushstream.transformer import Map, Subprocess
+from pushstream.consumer import Reduce
+from common.misc import CatFileParser
+import pprint
 
 from pathlib import Path
 
@@ -496,18 +502,23 @@ class GitCliGocVerifier:
         a = Account(commit.author_name)
         res = []
         id = commit.tree
-        tree, err = self.retrieve_and_parse_tree_v2(id)
+        # tree, err = self.retrieve_and_parse_tree_read_blob_content(id)
+        tree, err = self.retrieve_tree_content(id)
         if err:
             return a, err
         # === Minimality of delta account checks Part 1 ===
-        for child in tree:
+        for child, blob_data in tree.items():
+            field_path = child.split("/", 1)
+            if len(field_path) > 2:
+                return a, [f"field path {child} too long"]
+            if len(field_path) == 0:
+                # Not sure this can ever happen..
+                return a, [f"field path {child} too short"]
             err = ""
-            match child:
+            match field_path[0]:
                 case "c":
-                    blob_data = tree[child]
-                    if not isinstance(blob_data, bytes):
-                        res.append("blob expected in field 'c', got something else (probably tree)")
-                        continue
+                    if len(field_path) > 1:
+                        return a, [f"field path {child} too long"]
                     number, err = int_from_bytes(blob_data)
                     if number == 0:
                         res.append("unnecessary zero value stored in field 'c'")
@@ -515,10 +526,8 @@ class GitCliGocVerifier:
                         res.append(f"field {child} of tree {id}: {err}")
                     a.created = number
                 case "d":
-                    blob_data = tree[child]
-                    if not isinstance(blob_data, bytes):
-                        res.append("blob expected in field 'd', got something else (probably tree)")
-                        continue
+                    if len(field_path) > 1:
+                        return a, [f"field path {child} too long"]
                     number, err = int_from_bytes(blob_data)
                     if number == 0:
                         res.append("unnecessary zero value stored in field 'd'")
@@ -526,48 +535,31 @@ class GitCliGocVerifier:
                         res.append(f"field {child} of tree {id}: {err}")
                     a.destroyed = number
                 case "a":
-                    subtree = tree[child]
-                    if not isinstance(subtree, dict):
-                        res.append("tree expected in field 'a', got something else (probably blob)")
-                        continue
-                    if not subtree:
-                        res.append("unnecessary field 'a' (empty mapping)")
-                    for entry in subtree:
-                        blob_data = subtree[entry]
-                        if not isinstance(blob_data, bytes):
-                            res.append("blob expected in field 'a', got something else (probably tree)")
-                            continue
-                        number, err = int_from_bytes(blob_data)
-                        if number == 0:
-                            res.append("unnecessary zero value stored in mapping 'a'")
-                        if len(err) > 0:
-                            res.append(f"field {child}/{entry} of tree {id}: {err}")
-                        a.acked[entry.encode()] = number
+                    if len(field_path) < 2:
+                        return a, [f"field path {child} too short"]
+                    number, err = int_from_bytes(blob_data)
+                    if err:
+                        res.append(f"error when parsing blob_content: {err}")
+                    a.acked[field_path[1].encode()] = number
                 case "g":
-                    subtree = tree[child]
-                    if not isinstance(subtree, dict):
-                        res.append("tree expected in field 'g', got something else (probably blob)")
-                        continue
-                    if not subtree:
-                        res.append("unnecessary field 'g' (empty mapping)")
-                    for entry in subtree:
-                        blob_data = subtree[entry]
-                        if not isinstance(blob_data, bytes):
-                            res.append("blob expected in field 'g', got something else (probably tree)")
-                            continue
-                        number, err = int_from_bytes(blob_data)
-                        if number == 0:
-                            res.append("unnecessary zero value stored in mapping 'g'")
-                        if len(err) > 0:
-                            res.append(f"field {child}/{entry} of tree {id}: {err}")
-                        a.given[entry.encode()] = number
+                    if len(field_path) < 2:
+                        return a, [f"field path {child} too short"]
+                    number, err = int_from_bytes(blob_data)
+                    if err:
+                        res.append(f"error when parsing blob_content: {err}")
+                    a.given[field_path[1].encode()] = number
                 case x:
                     res.append(f"there is an unnecessary field in the tree: {x}")
 
         self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res
 
-    def retrieve_and_parse_tree_v2(self, tree_id: bytes) -> tuple[TreeDict, list[str]]:
+    def get_delta_acc_v2(self, commit: Commit) -> Tuple[Account | None, list[str]]:
+        a = Account(commit.author_name)
+        raise NotImplementedError()
+        return a, err
+
+    def retrieve_and_parse_tree_read_blob_content(self, tree_id: bytes) -> tuple[TreeDict, list[str]]:
         # TODO add caching to this (_obj_cache)
         t = self.repo.retrieve_tree(tree_id.decode(), True)
         env = os.environ
@@ -609,6 +601,46 @@ class GitCliGocVerifier:
             node[field_names[-1]] = blob_content.encode()
         if p is not None:
             p.terminate()
+        return res, []
+
+    def retrieve_tree_content(self, tree_id: bytes) -> tuple[dict[str, bytes], list[str]]:
+        # TODO add caching to this (_obj_cache)
+        # TODO add constraint check on the paths: only allow alphanumeric
+        # characters and "/"
+        t = self.repo.retrieve_tree(tree_id.decode(), True)
+        env = os.environ
+        if "GIT_DIR" in env:
+            del env["GIT_DIR"]
+        err = []
+        oid_to_paths: dict[bytes, set[str]] = {}
+        for child_line in t.splitlines():
+            child_attrs = child_line.split(maxsplit= 3)
+            assert child_attrs[1] == b"blob"
+
+            blob_id = child_attrs[2]
+
+            path = child_attrs[3].decode()
+            if blob_id in oid_to_paths:
+                oid_to_paths[blob_id].add(path)
+            else:
+                oid_to_paths[blob_id] = set([path])
+        if err:
+            return {}, err
+        def reduce_to_dict(d: dict[str, bytes], x: list[tuple[bytes, bytes]]):
+            for oid, content in x:
+                for path in oid_to_paths[oid]:
+                    d[path] = content
+            return d
+        res: dict[str, bytes] = {}
+        def retrieve_result(_, r: dict[str, bytes]):
+            nonlocal res
+            res = r
+        # pprint.pprint(oid_to_paths)
+        pushstream.push(
+            Values(map(lambda x: x + b"\n", oid_to_paths)),
+            Subprocess(["git", "-C", self.repo.git_path, "cat-file", CatFileParser.batch_arg]),
+            Map(CatFileParser()),
+            Reduce(acc={}, reduce=reduce_to_dict, close=retrieve_result))
         return res, []
 
     def obj_cache_lookup(self, id: bytes) -> bytes:
