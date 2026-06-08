@@ -203,3 +203,78 @@ class bcolors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+
+class CatFileParser():
+    """
+    instances of this class can be passed to a map module. The upstream
+    module is assumed to be a subprocess with the command
+    "git cat-file '--batch=%(objectname) %(objectsize)'"
+
+    The output of this function is a list of pairs where the first element is
+    the blob id and the second element is the content of the blob or None if
+    there is no blob with the id supplied to the parent module (missing blob).
+    """
+    batch_arg = "--batch=%(objectname) %(objectsize)"
+    def __init__(self):
+        self.cur_oid: list[int] = []
+        self.cur_osize: list[int] = []
+        self.cur_content: list[int] = []
+        self.in_oid = True
+        self.in_osize = False
+        self.remaining_content: int = -1
+
+    def __call__(self, data: bytes):
+        res: list[tuple[bytes, bytes | None]] = []
+        for i in range(len(data)):
+            byte = data[i:i+1]
+            if self.in_oid:
+                assert not self.in_osize
+                assert self.remaining_content == -1
+                if byte == b" ":
+                    self.in_oid = False
+                    self.in_osize = True
+                elif byte == b"\n":
+                    pass
+                else:
+                    # TODO validate oid
+                    self.cur_oid.append(ord(byte))
+            elif self.in_osize:
+                assert not self.in_oid
+                assert self.remaining_content == -1
+                if byte == b"\n":
+                    self.in_osize = False
+                    number_or_missing = bytes(self.cur_osize)
+                    # handle missing objects here
+                    if number_or_missing == b"missing":
+                        oid, _ = self.get_res()
+                        res.append((oid, None))
+                        # print(f"oid {oid} is missing")
+                    else:
+                        self.remaining_content = int(number_or_missing)
+                        if self.remaining_content == 0:
+                            assert not self.in_oid
+                            assert not self.in_osize
+                            res.append(self.get_res())
+                    self.cur_osize = []
+                else:
+                    self.cur_osize.append(ord(byte))
+            elif self.remaining_content > 1:
+                self.remaining_content -= 1
+                self.cur_content.append(ord(byte))
+            else:
+                self.cur_content.append(ord(byte))
+                assert self.remaining_content == 1
+                assert not self.in_oid
+                assert not self.in_osize
+                res.append(self.get_res())
+        return res
+
+    def get_res(self):
+        assert not self.in_osize
+        res = bytes(self.cur_oid), bytes(self.cur_content)
+        self.cur_content = []
+        self.cur_osize = []
+        self.cur_oid = []
+        self.remaining_content = -1
+        self.in_oid = True
+        return res
