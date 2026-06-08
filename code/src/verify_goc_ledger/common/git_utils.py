@@ -76,24 +76,24 @@ class Repo:
 
     def _create_tree_internal(self, path: list[str], data: TreeDict) -> tuple[str, int]:
         added_entries = 0
-        cacheinfo_opts = ""
+        cacheinfo_opts = []
         for n in data:
             entry = data[n]
             if isinstance(entry, bytes):
                 h = self.create_blob(entry)
                 added_entries += 1
-                cacheinfo_opts += f" --cacheinfo 100644,{h.decode()},{str.join("/", path + [n])}"
+                cacheinfo_opts += ["--cacheinfo", f"100644,{h.decode()},{str.join("/", path + [n])}"]
             else:
                 assert isinstance(entry, dict)
                 _, new_added_entries = self._create_tree_internal(path + [n], entry)
                 added_entries += new_added_entries
         if len(cacheinfo_opts) > 0:
-            run_cmd(f"git update-index --add {cacheinfo_opts}", self.git_path)
+            run_cmd(["git", "update-index", "--add", *cacheinfo_opts], self.git_path)
         if added_entries == 0:
-            res = run_cmd(f"git mktree </dev/null")
+            res = run_cmd("git mktree </dev/null")
         else:
             assert len(path) > 0, "path must have positive length"
-            res = run_cmd(f"git write-tree --missing-ok --prefix={str.join("/", path)}/", self.git_path)
+            res = run_cmd(["git", "write-tree", "--missing-ok", f"--prefix={str.join("/", path)}/"], self.git_path)
         return bytes.strip(res).decode(), added_entries
 
     def reset_index(self):
