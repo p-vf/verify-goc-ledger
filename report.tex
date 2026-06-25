@@ -5,7 +5,19 @@
 \usepackage{amssymb}
 \usepackage{amsmath}
 \usepackage{algpseudocode}
+\usepackage[chapter]{algorithm}
 \usepackage{todonotes}
+\usepackage{hyperref}
+
+% Source - https://tex.stackexchange.com/a/306992
+% Posted by egreg
+% Retrieved 2026-06-25, License - CC BY-SA 3.0
+\makeatletter
+\pdfstringdefDisableCommands{\let\(\fake@math}
+\newcommand\fake@math{}% just for safety
+\def\fake@math#1\){[math]}
+\makeatother
+
 
 \title{Optimization of Invariant Verification for Safe Replication of BFT-Logs}
 \author{Pascal von Fellenberg}
@@ -18,15 +30,321 @@
 \newcommand{\msgId}[0]{\texttt{MsgId}}
 \newcommand{\deltacc}[1]{#1^\delta}
 \newcommand{\id}[1]{#1_\textit{id}}
+\newcommand{\fields}[1]{#1_\textit{fields}}
+\setlength{\marginparwidth}{100pt}
 
 \section*{Abstract}
 TODO
 
 \section{Introduction}
+Contributions:
+\begin{enumerate}
+    \item algorithm for verifying GOC-Ledger state.
+    \item efficient encoding of delta account as commit messages.
+    \item proposal with new message type and invariant it must satisfy (that it must address a fork that wasn't present in the frontier before)
+    \item invariants $\delta1$ to $\delta8$ and $F1$
+\end{enumerate}
 TODO
 
-\section{Background / Terminology} \todo{add description of the used notation here}
-TODO
+\section{Background / Terminology / Invariants} \todo{add description of the used notation here}
+\todo{introduce concepts}
+\todo{introduce induced frontier}
+\todo{define fields $(\cdot)_\emph{fields}$ of Accounts}
+
+\subsection{Invariants on delta account \texorpdfstring{$\deltacc{A}$}{}}
+\label{sec:invariants-delta-a}
+The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
+$L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$. \todo{write $A_\emph{old}$ instead of $L_\emph{before}$ where appropriate}
+\begin{enumerate}
+    \item [$\delta1$] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so for any field $\deltacc{F} \in \fields{(\deltacc{A})}$, $L_\emph{before} \neq L_\emph{before} \sqcup \deltacc{F}$ must hold.
+    \item [$\delta2$] (non-negative balance) The constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
+    \item [$\delta3$] (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $\deltacc A_{\leftarrow}$, i.e. the author ids of authors from which the author with id $A_\textit{id}$ acked something).
+    \item [$\delta4$] (valid creator) If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
+    \item [$\delta5$] (account not empty) At least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ must be defined.
+\end{enumerate}
+
+\subsection{Invariants on Message \texorpdfstring{$M$}{} and corresponding delta account \texorpdfstring{$\acc(M)$}{}}
+We want the dependencies that are necessary to track the origins of a transaction. We don't want unnecessary ones. This yields the following invariants.
+
+A message $M'$ is relevant to message $M$ if one of the following hold
+\begin{itemize}
+    % ASSUME_CAUSAL_STABILITY
+    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{author}$ \todo{I am not sure if this dependency is necessary.. }
+    \item $\acc(M)_{\leftarrow *}$ contains $M'_\textit{author}$
+\end{itemize}
+Furthermore, we need to check that there is at least one dependency for each author mentioned in the acked/given fields (see $\delta7$).
+Additionally, the date of the message can be checked. This is not necessary for any safety properties of the system, but can still be useful for understanding messages (see $\delta8$).
+\begin{enumerate}
+    \item [$\delta6$] (relevant dependencies) all the dependencies of $M$ are relevant, i.e. for all $msgId \in M_\emph{deps}$ it holds that there exists $M'$ with $\msgId(M') = msgId$ and $M'$ is a relevant to $M$.
+    \item [$\delta7$] (necessary dependencies) for any author $a \in \acc(M)_{\rightarrow *} \cup \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{id} = a$ and $\msgId(M') \in M_\textit{deps}$
+    \item [$\delta8$] (non-decreasing dates) $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
+\end{enumerate}
+
+\subsection{Invariants on Message \texorpdfstring{$M$}{} inherited from 2P-BFT-Log}
+\begin{enumerate}
+    \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \texttt{MsgId}(M'): M'$ exists and is valid.
+    \item [M2] \emph{(single author)}: if $M_\textit{prev} = \texttt{MsgId}(M')$ then $M'_\textit{author} = M_\textit{author}$.
+    \item [M3] \emph{(valid external dependencies)}: for all $\textit{msgId} \in M_\textit{deps}$, there exists a valid $M'$ such that $\textit{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} \neq M_\textit{author}$.
+    \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, there exists at most one $\textit{msgId} \in M_\textit{deps}$, such that $\texttt{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} = \textit{author}$.
+    \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$.
+    \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
+    \item [M7] \emph{(monotonic dependencies)}: if $M \stackrel{log}{\rightsquigarrow} M'$ then for all $(msgId, msgId') \in M_\textit{deps} \times M'_\textit{deps} : msgId = \msgId(D) \land msgId' = \msgId(D') \land D_\textit{author} = D'_\textit{author} \Rightarrow D \le_\mathcal M D'$. \footnote{This invariant isn't necessary for safety and liveness properties, but we check it nonetheless}
+\end{enumerate}
+% Validity properties if log $L$ is in growing phase:
+% \begin{enumerate}
+%     \item [CL1] \emph{(no forks)}: $L_\textit{forks} = \emptyset$.
+%     \item [CL2] \emph{(valid last message)}: if $L_\textit{last} = M \neq \bot$ then $M$ is valid.
+%     \item [CL3] \emph{(consistent previous author)}: if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
+% \end{enumerate}
+% Validity properties if log $L$ is in shrinking phase:
+% \begin{enumerate}
+%     \item [FL1] \emph{(non-empty forks)}: $L_\textit{forks} \neq \emptyset$.
+%     \item [FL2] \emph{(valid last message)}: same as CL2.
+%     \item [FL3] \emph{(consistent previous author)}: same as CL3.
+%     \item [FL4] \emph{(valid forks)}: for all $M \in L_\textit{forks}$, $M$ is valid.
+%     \item [FL5] \emph{(consistent fork author)}: for all $M \in L_\textit{forks}$, $L_\textit{author} = M_\textit{author}$ and if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
+%     \item [FL6] \emph{(valid proof)}: if $M \in L_\textit{forks}$ then $\exists M' \in L_\textit{forks}$ such that $M \neq M'$ and $M_\textit{prev} = M'_\textit{prev}$.
+%     \item [FL7] \emph{(consistent proof)}: for all $M \in L_\textit{forks}$, $L_\textit{last} = M_\textit{prev}$.
+% \end{enumerate}
+
+\subsection{Further Invariants related to Forking}
+We want to ensure that authors don't make any transactions with an author that has a forked log. To enforce this, the following invariant for message $M$ has to be checked: if there is a fork proof $\{M', M''\}$ (meaning $M'$, $M''$ are valid, from the same author $author$ and $M'_\emph{prev} = M''_\emph{prev}$) in the messages that are known to $M_\emph{author}$ at the time of creating $M$ (denoted $K(M)$), $M_\emph{deps}$ must not contain a message created by the author which created the fork, even if it references a message before the fork.
+The set of messages known to $M$, $K(M)$ is defined as all the messages reachable from the dependencies $M_\emph{deps}$ and $M_\emph{prev}$, or more formally the set $K(M) = \{M' \mid M' \rightsquigarrow M\}$.
+\begin{enumerate}
+    \item [$F1$] \emph{(No messages after fork)} if there is a fork proof $P$ of the log of author $a$ with $P \subseteq K(M)$, then there must be no message $M'$ with $\msgId(M') \in M_\emph{deps}$ and $M'_\emph{author} = a$.
+\end{enumerate}
+
+\section{Algorithm for Verification}
+To verify messages, the messages are visited in an arbitrary topological order according to the relation $\le_\mathcal{M}$, meaning if $M \rightsquigarrow M'$, $M$ must be visited before $M'$. Each message gets checked for the invariants and if it is valid, it is added to the set of valid message ids $F_\emph{valid}$. \footnote{If memory is a concern, the immediate predecessors of $M$ can be removed from $F_\emph{valid}$ and the check if a message $M'$ has been validated before becomes is there a $msgId \in F_\emph{valid}$ with $M'  \le_\mathcal{M} C_\emph{msg}[msgId]$. This makes $F_\emph{valid}$ a sort of frontier of valid messages.}
+
+\todo{define VerifySignature, Balance, RecreateFrontier}
+\begin{algorithmic}[1]
+\Function{VerifyReplica}{set of messages $\mathcal M$}
+    \State $F_\emph{valid} \gets \emptyset$ \Comment{The set of ids corresponding to valid messages}
+    \State $C_\emph{msg} \gets \emptyset$ \Comment{A mapping from message ids to messages}
+    \ForAll{$M \in \mathcal{M}$ in a reverse topological order}
+        \State $C_\emph{msg}[\msgId(M)] \gets M$
+        \If{$\Call{VerifyMessage}{M, C_\emph{msg}, F_\emph{valid}}$}
+            \State $F_\emph{valid} \gets F_\emph{valid} \cup \{\msgId(M)\}$ \Comment{add $M$ as valid message}
+            % \State $F_\emph{valid} \gets F_\emph{valid} \setminus (M_\emph{deps} \cup \{M_\emph{prev}\})$ \Comment{remove messages in $K(M)$}
+        \EndIf
+    \EndFor
+    \State \Return $F_\emph{valid}$
+\EndFunction
+\end{algorithmic}
+
+The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$. \todo{add description of parameters}
+\begin{algorithmic}
+\Function{VerifyMessage}{message $M$, message cache $C_\emph{msg}$, $F_\emph{valid}$}
+    \State \ldots \Comment checks that return false if failed, listed in following sections
+    \State \Return true
+\EndFunction
+\end{algorithmic}
+
+For readability the function \textsc{VerifyMessage} was split up into multiple parts, which now follow.
+\\
+
+\subsection{Verifying the invariants \(M1\) to \(M7\) and \(F1\)}
+\begin{algorithmic}
+    \If{$(M_\emph{prev} \ne \bot $ and $M_\emph{prev} \notin F_\emph{valid})$} \Comment $M1$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+First, the invariant $M1$ can be checked. We need to check that if the message has a previous message, this is a valid message. Since we visit the messages in topological order, we know that the previous message must have been verified and thus be in the set $F_\emph{valid}$ if and only if message corresponding to $M_\emph{prev}$ is valid.
+\\
+
+\begin{algorithmic}
+    \If{$M_\emph{prev} \neq \bot$ and $(C_\emph{msg}[M_\emph{prev}])_\emph{author} \ne M_\emph{author}$} \Comment $M2$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+To check the invariant $M2$, we need to check that the previous message is from the same author. This can easily be done using a lookup in $C_\emph{msg}$.
+\\
+
+\begin{algorithmic}
+    \If{$M_\emph{deps} \not\subseteq F_\emph{valid}$} \Comment $M3$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+This check is analogous to $M1$, but for the dependencies of $M$.
+\\
+
+\begin{algorithm}
+\begin{algorithmic}[1]
+    \State Authors $\gets \emptyset$ \Comment map of author to message id
+    \ForAll{$msgId \in M_\emph{deps}$} \Comment $M4$
+        \State Author $\gets (C_\emph{msg}[msgId])_\emph{author}$
+        \If{Author $\in$ keys of Authors} \label{alg:m4:check1}
+            \State \Return false
+        \EndIf
+        \If{Author $= M_\emph{author}$} \label{alg:m4:check2}
+            \State \Return false
+        \EndIf
+        \State Authors[Author] $\gets \text{Authors} \cup \{\text{Author}\}$
+    \EndFor
+\end{algorithmic}
+\caption{This check verifies $M4$. It checks if an author occurs more than once (see line~\ref{alg:m4:check1}) and if the author of the message occurs in its own dependencies (see line~\ref{alg:m4:check2}). If either of these conditions is true, the message is invalid.}
+\label{alg:m4}
+\end{algorithm}
+\todo{The check on line~\ref{alg:m4:check2} is not mentioned in $M4$, but I think it makes sense}
+
+\begin{algorithmic}
+    \If{$\lnot(\Call{VerifySignature}{M})$} \Comment $M5$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+To check $M5$, we need to validate the signature. \todo{write this function down}
+\\
+
+\begin{algorithm}
+\begin{algorithmic}
+    \State \textbf{Precondition:} Authors must have been calculated (as in algorithm~\ref{alg:m4})
+    \State Frontier $\gets \Call{RecreateFrontier}{M}$ \Comment mapping of authors to their log state after replaying all messages in $K(M)$
+    \ForAll{Author $\in$ keys of Authors}
+        \State Log $\gets \text{Frontier}[\text{Author}]$
+        \If {$(\text{Log})_\emph{forks} = \emptyset$}
+            \If {$\text{Authors}[\text{Author}] \rightsquigarrow C_\emph{msg}[(\text{Log})_\emph{last}]$} \Comment $M7$
+                \State \Return false
+            \EndIf
+        \Else
+            \State \Return false \Comment $F1$
+        \EndIf
+    \EndFor
+\end{algorithmic}
+\caption{To verify $M7$ and $F1$, we have to go through some of the logs as they must have been known by $M$, i.e. the frontier that the replica of $M_\emph{author}$ must have known about before creating $M$. We check a log, if the corresponding author $A$ appears in the immediate dependencies of $M$ (i.e. $A$ is a key of Authors, as computed in Algorithm~\ref{alg:m4}). If there was a fork for the author $A$ in the causal history of $M$ this means that $M$ violates $F1$. If there was no fork, we need to check that the last message of author $A$ ($(\text{Frontier}[A])_\emph{last}$) happens before or is equal to the corresponding message in the immediate dependencies ($\text{Authors}[A]$).}
+\label{alg:m7f1}
+\end{algorithm}
+
+\subsection{Verifying the invariants \(\delta1\) to \(\delta8\)}
+
+For the following code snippets, we assume that the variables $A_\emph{old}$ and $\deltacc{A}$ have been computed as below. Additionally we assume Frontier has been computed as in Algorithm~\ref{alg:m7f1}.
+\begin{algorithmic}
+    \State $A_\emph{old} \gets (\text{Frontier}[M_\emph{author}]_\emph{account})$
+    \State $\deltacc{A} \gets \acc(M)$
+\end{algorithmic}
+
+$A_\emph{old}$ represents the old account state and is retrieved from Frontier, as each log in the frontier also stores the state of the account after replaying the messages.
+$\deltacc{A}$ represents the newly added state and has empty fields for each field that isn't stored (i.e. $A_\uparrow$ and $A_\downarrow$ have $\bot$, $A_\rightarrow$ and $A_\leftarrow$ have $\emptyset$ as empty value).
+
+
+\begin{algorithmic}
+    \If {$\deltacc{A}_\uparrow \ne \bot$ and $\deltacc{A}_\uparrow \leq (A_\emph{old})_\uparrow$} \Comment $\delta1$
+        \State \Return false
+    \EndIf
+    \If {$\deltacc{A}_\downarrow \ne \bot$ and $\deltacc{A}_\downarrow \leq (A_\emph{old})_\downarrow$}
+        \State \Return false
+    \EndIf
+    \If {there exist $a \in \deltacc{A}_{\rightarrow*}$ with $a \in (A_\emph{old})_{\rightarrow*}$ and $\deltacc{A}_\rightarrow[a] \leq (A_\emph{old})_\rightarrow[a]$}
+        \State \Return false
+    \EndIf
+    \If {there exist $a \in \deltacc{A}_{\leftarrow*}$ with $a \in (A_\emph{old})_{\leftarrow*}$ and $\deltacc{A}_\leftarrow[a] \leq (A_\emph{old})_\leftarrow[a]$}
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+We check that $\delta1$ is satisfied by checking that there are no unnecessary fields, i.e. if a field is non-empty, the field must increase the corresponding grow-only counter.
+This is done by comparing the delta account $\deltacc{A}$ with the old account state $A_\emph{old}$.
+\\
+
+\begin{algorithmic}
+    \State $A_\emph{new} \gets A_\emph{old} \sqcup \deltacc{A}$
+    \If {$\Call{Balance}{A_\emph{new}} < 0$} \Comment $\delta2$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+$A_\emph{new}$ represents the whole account state after applying $\deltacc{A}$.
+We check that $\delta2$ is satisfied by computing the balance of $A_\emph{new}$ and checking if it is non-negative.
+\\
+
+\begin{algorithmic}
+    \State \textbf{Precondition:} Authors must have been calculated (as in algorithm~\ref{alg:m4})
+    \State RelevantAuthors $\gets \deltacc{A}_{\rightarrow*} \cup \deltacc{A}_{\leftarrow*}$
+    % ASSUME_CAUSAL_STABILITY
+    \ForAll{$a \in \text{Authors}$} \Comment $\delta6$
+        \If{$a \not\in$ RelevantAuthors}
+            \State \Return false
+        \EndIf
+        \State RelevantAuthors $\gets$ RelevantAuthors $\setminus \{a\}$
+    \EndFor
+    \If{RelevantAuthors $\ne \emptyset$} \Comment $\delta7$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+% ASSUME_CAUSAL_STABILITY
+To check $\delta6$ and $\delta7$ we create the set of authors that are relevant to the transaction, namely the authors that were given tokens and the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared twice in the dependencies, in either case the message is invalid.
+
+% ASSUME_CAUSAL_STABILITY
+To check $\delta7$, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was ``consumed'' in the preceding for loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
+\\
+
+\begin{algorithmic}
+    \State \textbf{Precondition:} Authors has been calculated (as in Algorithm~\ref{alg:m4}), $\delta7$ has been checked.
+    \ForAll{Author $\in \deltacc{A}_{\leftarrow*}$} \Comment $\delta3$
+        \State $A_\emph{other} \gets (\text{Frontier}[\text{Author}])_\emph{account}$ \label{alg:d3:other}
+        \If{$M_\emph{author} \notin (A_\emph{other})_{\rightarrow *}$ or $((A_\emph{other})_\rightarrow)[M_\emph{author}] < \deltacc{A}_\leftarrow$}
+            \State \Return false
+        \EndIf
+    \EndFor
+\end{algorithmic}
+To check $\delta3$, we must go through the authors that $\deltacc{A}$ claims to acknowledge tokens from and check that these authors actually gave them to the account.
+Since we checked $\delta7$ before this, we know that $A \in \text{keys of Authors}$ for all $A \in \deltacc{A}_{\leftarrow*}$, so $\text{Frontier}[\text{Author}]$ in line \ref{alg:d3:other} must be well defined. \todo{maybe make this more clear}
+\\
+
+\begin{algorithmic}
+    \If {$\deltacc{A} \ne \bot$ and $M_\emph{author}$ is not authorized to create tokens} \Comment $\delta4$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+To check $\delta4$, we must check that the author $M_\emph{author}$ is authorized to create tokens. This could be a simple lookup in a set of authorized users, but could also be more complicated, depending on how the application handles created tokens.
+\\
+
+\begin{algorithmic}
+    \If {$\deltacc{A}_\downarrow = \deltacc{A}_\uparrow = \bot$ and $\deltacc{A}_\rightarrow = \deltacc{A}_\leftarrow = \emptyset$} \Comment $\delta5$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+To check $\delta5$ we check if there is a non-empty field in $\deltacc{A}$. If no, the message $M$ is invalid.
+\\
+
+
+\begin{algorithmic}
+    \If{$(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$} \Comment $\delta8$
+        \State \Return false
+    \EndIf
+\end{algorithmic}
+The check of $\delta8$ is trivial, one just has to check if the date of the previous message is less than or equal to the date of the current message.
+\\
+
+
+
+\begin{algorithmic}[1]
+\Function{RecreateFrontier}{message $M$}
+    \State Frontier $\gets \emptyset$
+    \ForAll{message $N \in K(M)$ in topological order}
+        \If{$N_\emph{author}$ is not in the keys of Frontier}
+            \State $L \gets \Call{InitializeLog}{N_\emph{author}}$
+            \State $L_\emph{last} \gets \msgId(N)$
+            \State $L_\emph{account} \gets \acc(N)$
+            \State Frontier$[N_\emph{author}] \gets L$
+        \Else
+            \State Frontier$[N_\emph{author}] \gets \Call{UpdateLog}{\text{Frontier}[N_\emph{author}], N}$
+        \EndIf
+    \EndFor
+\EndFunction
+\end{algorithmic}
+\begin{algorithmic}[1]
+\Function{UpdateLog}{log $L$, message $M$}
+    \State \textbf{assumption:} $L_\emph{author} = M_\emph{author}$, message $M$ is given in topological order (i.e. there is no message $M'$ which was given to this function before $M$, such that $M \rightsquigarrow M'$).
+    \State \textbf{TODO}
+\EndFunction
+\end{algorithmic}
+
+
+\subsection{Rationale}
+When storing the messages in a hash graph using a cryptographically secure hash function, $M6$ does not need to be checked, because for someone to create a cycle in a hash graph, they must find a collision which is assumed to be impossible when using such a hash function.
+Invariants $\delta1$, $\delta4$, $\delta5$, $M6$ are straightforward to check, as they only involve data stored in the message in question.
+To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, $M1$, $M2$, $M3$, $M4$, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $MCache[msgId] = M$ where $\msgId(M) = msgId$. This $MCache$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
+
+Now the only invariants left to check are $\delta2$, $M7$ and $F1$.\todo{write justification on why we need to compute the frontier}
 
 \section{Design of Test Repository}
 
@@ -34,16 +352,13 @@ TODO
 \hline
 \textbf{Git Commit Field} & \textbf{Purpose} \\
 \hline
-\emph{author} & $M_{author}$ as \emph{author.name}, the \emph{author.email} is not used; \\
-\emph{commiter} & Not used; \\
+\emph{author} & $M_{author}$ as \emph{author.name}, the field \emph{author.email} is not used; \\
+\emph{committer} & Not used; \\
 \emph{parents} & First parent is always $M_{prev}$, while the next are $M_{deps}$; \\
 \emph{message} & Contains both the $M_{payload}$ and $M_{signature}$; \\
 \emph{tree-hash} & Hash referencing the tree-object that represents the delta state. \\
 \hline
 \end{tabular}
-
-\subsection{State of the 2P-BFT-Log to Track}
-idk what to write here yet.
 
 \subsection{State of the $\delta$-GOC-Ledger to Track}
 Part of the datastructure is the account, in the following represented as $A$.
@@ -78,72 +393,21 @@ These tree objects contain entries corresponding to the authors which contain ha
 \end{figure}
 Since this is only a benchmark of the verification of commits, I don't include the references necessary for replication (remotes), the ones for checkpointing and the ones related to aliases.
 
-\section{Invariants to Check}
-
-\subsection{Invariants on delta account $\deltacc{A}$}
-\label{sec:invariants-delta-a}
-The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
-$L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$.
-\begin{enumerate}
-    \item [$\delta$1] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so $L_\textit{before} \sqsubset L_\textit{after}$. \todo{This isn't precise enough. Each field individually must increase the state of the ledger, not just the delta account as a whole.}
-    \item [$\delta$2] (non-negative balance after giving) If $\deltacc A_\rightarrow$ is non-empty, the constraint $\balance(L_\textit{after}[\id{\deltacc{A}}]) \ge 0$ must hold.
-    \item [$\delta$3] (non-negative balance after destroying) If $\deltacc A_\downarrow$ is present, the constraint $L_\textit{after}[\id{\deltacc A}] \ge 0$ must hold.
-    \item [$\delta$4] (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[\id{\deltacc A}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$ ($\deltacc A_{\leftarrow*}$ is the set of keys in $\deltacc A_{\leftarrow}$, i.e. the author ids of authors from which the author with id $A_\textit{id}$ acked something).
-    \item [$\delta$5] (valid creator) If $\deltacc A_\uparrow$ is present, $A$ must be permitted to create tokens. \todo{who can create tokens and when?}
-    \item [$\delta$6] (account not empty) At least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ must be defined.
-\end{enumerate}
-
-\subsection{Invariants on Message $M$ and corresponding delta account $\acc(M)$}
-A message $M'$ is relevant to message $M$ if one of the following hold
-\begin{itemize}
-    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{id}$ \todo{I am not sure if this dependency is necessary.. }
-    \item $\acc(M)_{\leftarrow *}$ contains $M'_\textit{id}$
-\end{itemize}
-
-\textbf{Relevant Dependencies} \\
-The dependencies of a message $M$ with corresponding delta account $\acc(M)$ are relevant if the following holds: For all $msgId \in M_\textit{deps}$, there exists $M'$ with $\texttt{MsgId}(M') = msgId$ and $M'$ is relevant to $M$.\\
-In order for a message $M$ to be GOC-Ledger valid, the following must hold \footnote{in these invariants, we allow that a message has multiple dependencies from the same author. This is covered by the 2P-BFT-Log invariant M5.} \todo{Find a better name for this than ``GOC-Ledger valid''}
-\begin{itemize}
-    \item the invariants $\delta1$ to $\delta6$ (see Section \ref{sec:invariants-delta-a}) must be satisfied for $\acc(M)$
-    \item (non-decreasing dates) $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
-    \item the dependencies of $M$ are relevant
-    \item for any author $a \in \acc(M)_{\rightarrow *} \cup \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{id} = a$ and $\msgId(M') \in M_\textit{deps}$
-    \item for all $M'$ with $\msgId(M') \in M_\textit{deps}\cup \{M_prev\}$, $M'$ must also be GOC-Ledger valid
-\end{itemize}
-
-\subsection{Invariants on Message $M$ inherited from 2P-BFT-Log}
-\begin{enumerate}
-    \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \texttt{MsgId}(M'): M' \text{exists and is valid.}$
-    \item [M2] \emph{(single author)}: if $M_\textit{prev} = \texttt{MsgId}(M')$ then $M'_\textit{author} = M_\textit{author}$.
-    \item [M3] \emph{(valid external dependencies)}: for all $\textit{msgId} \in M_\textit{deps}$, there exists a valid $M'$ such that $\textit{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} \neq M_\textit{author}$.
-    \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, there exists at most one $\textit{msgId} \in M_\textit{deps}$, such that $\texttt{MsgId}(M') = \textit{msgId}$ and $M'_\textit{author} = \textit{author}$.
-    \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$.
-    \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
-    \item [M7] \emph{(monotonic dependencies)}: if $M \stackrel{log}{\rightsquigarrow} M'$ then for all $(msgId, msgId') \in M_\textit{deps} \times M'_\textit{deps} : msgId = \msgId(D) \land msgId' = \msgId(D') \land D_\textit{author} = D'_\textit{author} \Rightarrow D \le_\mathcal M D'$. \footnote{This invariant isn't necessary for safety and liveness properties, but we check it nonetheless}
-\end{enumerate}
-Validity properties if log $L$ is in growing phase:
-\begin{enumerate}
-    \item [CL1] \emph{(no forks)}: $L_\textit{forks} = \emptyset$.
-    \item [CL2] \emph{(valid last message)}: if $L_\textit{last} = M \neq \bot$ then $M$ is valid.
-    \item [CL3] \emph{(consistent previous author)}: if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
-\end{enumerate}
-Validity properties if log $L$ is in shrinking phase:
-\begin{enumerate}
-    \item [FL1] \emph{(non-empty forks)}: $L_\textit{forks} \neq \emptyset$.
-    \item [FL2] \emph{(valid last message)}: same as CL2.
-    \item [FL3] \emph{(consistent previous author)}: same as CL3.
-    \item [FL4] \emph{(valid forks)}: for all $M \in L_\textit{forks}$, $M$ is valid.
-    \item [FL5] \emph{(consistent fork author)}: for all $M \in L_\textit{forks}$, $L_\textit{author} = M_\textit{author}$ and if $L_\textit{last} \neq \bot$ then $L_\textit{author} = (L_\textit{last})_\textit{author}$.
-    \item [FL6] \emph{(valid proof)}: if $M \in L_\textit{forks}$ then $\exists M' \in L_\textit{forks}$ such that $M \neq M'$ and $M_\textit{prev} = M'_\textit{prev}$.
-    \item [FL7] \emph{(consistent proof)}: for all $M \in L_\textit{forks}$, $L_\textit{last} = M_\textit{prev}$.
-\end{enumerate}
-
-\subsection{Extensions to 2P-BFT-Log}
+\subsection{Proposal of Extension to 2P-BFT-Log}
 \todo{explain how the arcs in the diagrams map to \_prev and \_deps}
-One thing that is not explicitly stated in the design of the 2P-BFT-Log is how forks can lead intuitively to invalid messages if we expect certain behaviours of correct replicas. If an author detects a fork, we want to check that the construction and replication of a corresponding fork proof happened as soon as possible. In order to be able to check the timing of such a fork proof, the author must create a fork proof and reference it from a message in their own log. We call such a message a \emph{fork acknowledgement} which must satisfy some invariants which still have to be determined. 
-To motivate this concept, we can take a look at the scenario depicted in Figure \ref{fig:fork_scenario_1}, where there are 3 authors $a$, $b$, and $c$. The messages $x_i$ correspond to author $x \in \{a, b, c\}$ and can be assumed to valid according to the previous definition of valid. One can see that there is a fork in $b$s log, namely on message $b_1$, where $FP = \{b_2, b_3\}$ would serve as a fork proof. 
+Byzantine colluders might ignore messages that they have received so that they can make as much use as possible of a fork before acknowledging its existence. These colluders can make transactions with anyone that hasn't acknowledged the fork. Since the only way to acknowledge a fork in the design so far is for relevant parties to make a transactions, colluders might be able to do a lot of harm until these transactions happen.
+Therefore it might be beneficial to allow for special messages, called fork acknowledgements, that acknowledge a fork. If an author has acknowledged a fork, byzantine colluders cannot make transactions with this author if they want to take further advantage of that fork. A fork acknowledgement could be introduced to the design in different ways, one way is to add a message type that allows dependencies with authors that lead to a new fork and satisfies the constraints of 2P-BFT-Log.
 
-Notice that in order for $a$ to produce message $a_3$, (due to the message graph being a hash graph) $a$ must know about all messages in $\mathcal H(a_2) \cup \mathcal H(c_2) = \{a_1, a_2, b_1, b_2, b_3, c_1, c_2\}$ which includes the fork proof $FP$. From this we know that $a$ should have created a fork proof message of $FP$ before producing $a_3$, which means $a_3$ could be considered invalid. In order for the other participants to verify that $a$ added the fork proof at the right time, $a$ would have to add a fork acknowledgement message referencing the fork proof to her message history before creating message $a_3$, which can be seen in Figure \ref{fig:fork_scenario_1_fixed} (the magenta message is the fork proof, the green message the fork acknowledgement). 
+Here, an example helps to describe such a scenario: Author A witnessed a fork on the log of author B through author C, however A does not intend on making a transaction with C. If there is a malicious participant M that wants to collude with B, he can still make transactions involving newer messages of A without proving that he knows about the existence of the fork, so long as A does not make transactions with C. \todo{add figure depicting this scenario}
+
+However if author A posts an acknowledgement message referencing the last message of C, the participant M cannot make a transaction with A involving any newer messages of A. This is because any message of A after the acknowledgement serves as proof that B has forked his log.
+
+One invariant such a fork acknowledgements would have to satisfy is that there must be a fork that previously wasn't reachable from the messages of A that after the acknowledgement message is now reachable. Or more formally: let $M$, $M'$ be messages in the log of author $A$, where $M'_\emph{prev} = \msgId(M)$. Then there must be a forked commit in the induced frontier of $M'$ that was not present in the induced frontier of $M$.
+
+One thing that is not explicitly stated in the design of the 2P-BFT-Log is how forks can lead intuitively to invalid messages if we expect certain behaviours of correct replicas. If an author detects a fork, we want to check that the construction and replication of a corresponding fork proof happened as soon as possible. In order to be able to check the timing of such a fork proof, the author must create a fork proof and reference it from a message in their own log. We call such a message a \emph{fork acknowledgement} which must satisfy some invariants which still have to be determined.
+To motivate this concept, we can take a look at the scenario depicted in Figure \ref{fig:fork_scenario_1}, where there are 3 authors $a$, $b$, and $c$. The messages $x_i$ correspond to author $x \in \{a, b, c\}$ and can be assumed to valid according to the previous definition of valid. One can see that there is a fork in $b$s log, namely on message $b_1$, where $FP = \{b_2, b_3\}$ would serve as a fork proof.
+
+Notice that in order for $a$ to produce message $a_3$, (due to the message graph being a hash graph) $a$ must know about all messages in $\mathcal H(a_2) \cup \mathcal H(c_2) = \{a_1, a_2, b_1, b_2, b_3, c_1, c_2\}$ which includes the fork proof $FP$. From this we know that $a$ should have created a fork proof message of $FP$ before producing $a_3$, which means $a_3$ could be considered invalid. In order for the other participants to verify that $a$ added the fork proof at the right time, $a$ would have to add a fork acknowledgement message referencing the fork proof to her message history before creating message $a_3$, which can be seen in Figure \ref{fig:fork_scenario_1_fixed} (the magenta message is the fork proof, the green message the fork acknowledgement).
 \begin{figure}[h]
     \centering
     \includegraphics[width=.5\textwidth]{figures/fork_scenario_1.png}
@@ -156,7 +420,7 @@ Notice that in order for $a$ to produce message $a_3$, (due to the message graph
     \caption{The example message graph of Figure \ref{fig:fork_scenario_1} but where $a$ behaves correctly}
     \label{fig:fork_scenario_1_fixed}
 \end{figure}
-Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e. 
+Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e.
 
 
 \subsection{Validity Invariants Concerning Git Objects}
@@ -169,31 +433,5 @@ Here is an invariant that arises naturally: for a message $M$, the induced subgr
     \item id in the email must match the name of the author
     \item ...
 \end{itemize}
-
-\section{Verification Algorithm (GOC-Ledger Invariants)}
-\begin{algorithmic}[1]
-\Function{verify\_log}{set of Log Messages: $\mathcal M$}
-\State $S \gets \emptyset$ \Comment{This is a dictionary with default value $\emptyset$ on access}
-\State $R \gets \langle\rangle$ \Comment{This variable will contain the ids of all valid messages}
-\ForAll{$M \in \mathcal{M}$ in any topological order}
-    \State $L_\textit{before} \gets \bigsqcup_{L \in S[\id{M}]} L$
-    \State $S[\id{M}] \gets \emptyset$
-    \State $L_\textit{after} \gets \Call{apply}{M_\textit{acc}, L_\textit{before}}$
-    \If{$\Call{account\_valid}{L_\textit{before}, L_\textit{after}, M}$}
-        \State $R \gets R \| \langle M \rangle$
-    \EndIf
-    \State $L_M \gets L_\textit{after}$
-    \ForAll{$\id{C} \in \Call{children\_ids}{M}$}
-        \State $S[\id{C}] \gets S[\id{C}] \cup \{L_M\}$
-    \EndFor
-\EndFor
-\Return R
-\EndFunction
-\end{algorithmic}
-\todo{Implement APPLY function in pseudocode}
-\todo{borrow notation from Heisch's Master Thesis}
-
-
-
 
 \end{document}
