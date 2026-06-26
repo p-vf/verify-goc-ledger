@@ -31,6 +31,7 @@
 \newcommand{\deltacc}[1]{#1^\delta}
 \newcommand{\id}[1]{#1_\textit{id}}
 \newcommand{\fields}[1]{#1_\textit{fields}}
+\newcommand{\var}[1]{\textsl{#1}}
 \setlength{\marginparwidth}{100pt}
 
 \section*{Abstract}
@@ -51,7 +52,7 @@ TODO
 \todo{introduce induced frontier}
 \todo{define fields $(\cdot)_\emph{fields}$ of Accounts}
 
-\subsection{Invariants on delta account \texorpdfstring{$\deltacc{A}$}{}}
+\subsection{Invariants on delta account \(\deltacc{A}\)}
 \label{sec:invariants-delta-a}
 The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$. \todo{write $A_\emph{old}$ instead of $L_\emph{before}$ where appropriate}
@@ -63,7 +64,7 @@ $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to 
     \item [$\delta5$] (account not empty) At least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ must be defined.
 \end{enumerate}
 
-\subsection{Invariants on Message \texorpdfstring{$M$}{} and corresponding delta account \texorpdfstring{$\acc(M)$}{}}
+\subsection{Invariants on Message \(M\) and corresponding delta account \(\acc(M)\)}
 We want the dependencies that are necessary to track the origins of a transaction. We don't want unnecessary ones. This yields the following invariants.
 
 A message $M'$ is relevant to message $M$ if one of the following hold
@@ -80,7 +81,7 @@ Additionally, the date of the message can be checked. This is not necessary for 
     \item [$\delta8$] (non-decreasing dates) $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
 \end{enumerate}
 
-\subsection{Invariants on Message \texorpdfstring{$M$}{} inherited from 2P-BFT-Log}
+\subsection{Invariants on Message \(M\) inherited from 2P-BFT-Log}
 \begin{enumerate}
     \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \texttt{MsgId}(M'): M'$ exists and is valid.
     \item [M2] \emph{(single author)}: if $M_\textit{prev} = \texttt{MsgId}(M')$ then $M'_\textit{author} = M_\textit{author}$.
@@ -136,7 +137,7 @@ To verify messages, the messages are visited in an arbitrary topological order a
 \end{algorithmic}
 \end{algorithm}
 
-The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$. \todo{add description of parameters}
+The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$.
 \begin{algorithm}
     \caption{Basic structure of the function verifying individual messages}
 \begin{algorithmic}
@@ -198,16 +199,16 @@ The check of $M3$ (see Algorithm~\ref{alg:m3}) is analogous to $M1$, but over th
     \label{alg:m4}
 \begin{algorithmic}[1]
     \Statex \ldots \vphantom{I}
-    \State Authors $\gets \emptyset$ \Comment map of author to message id
+    \State \var{Authors} $\gets \emptyset$ \Comment map of author to message id
     \ForAll{$msgId \in M_\emph{deps}$} \Comment $M4$
-        \State Author $\gets (C_\emph{msg}[msgId])_\emph{author}$
-        \If{Author $\in$ keys of Authors} \label{alg:m4:check1}
+        \State $\var{Author} \gets (C_\emph{msg}[msgId])_\emph{author}$
+        \If{$\var{Author} \in$ keys of \var{Authors}} \label{alg:m4:check1}
             \State \Return false
         \EndIf
-        \If{Author $= M_\emph{author}$} \label{alg:m4:check2}
+        \If{$\var{Author} = M_\emph{author}$} \label{alg:m4:check2}
             \State \Return false
         \EndIf
-        \State Authors[Author] $\gets msgId$
+        \State \var{Authors}[\var{Author}] $\gets msgId$
     \EndFor
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
@@ -221,7 +222,7 @@ The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks i
     \label{alg:m5}
 \begin{algorithmic}
     \Statex \ldots \vphantom{I}
-    \If{$\lnot(\Call{VerifySignature}{M})$} \Comment $M5$
+    \If{not $\Call{VerifySignature}{M}$} \Comment $M5$
         \State \Return false
     \EndIf
     \Statex \ldots \vphantom{I}
@@ -234,13 +235,13 @@ To check $M5$ (see Algorithm~\ref{alg:m5}), we need to validate the signature. \
 \caption{Code snippet verifying $M7$ and $F1$}
 \label{alg:m7f1}
 \begin{algorithmic}
-    \Statex \textbf{Precondition:} Authors has been calculated (as in algorithm~\ref{alg:m4})
+    \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in algorithm~\ref{alg:m4})
     \Statex \ldots \vphantom{I}
-    \State Frontier $\gets \Call{RecreateFrontier}{M}$ \Comment mapping of authors to their log state after replaying all messages in $K(M)$
-    \ForAll{Author $\in$ keys of Authors}
-        \State Log $\gets \text{Frontier}[\text{Author}]$
-        \If {$(\text{Log})_\emph{forks} = \emptyset$}
-            \If {$\text{Authors}[\text{Author}] \rightsquigarrow C_\emph{msg}[(\text{Log})_\emph{last}]$} \Comment $M7$
+    \State $\var{Frontier} \gets \Call{RecreateFrontier}{M}$ \Comment mapping of authors to their log state after replaying all messages in $K(M)$
+    \ForAll{$\var{Author} \in$ keys of \var{Authors}}
+        \State $\var{Log} \gets \var{Frontier}[\var{Author}]$
+        \If {$(\var{Log})_\emph{forks} = \emptyset$}
+            \If {$\var{Authors}[\var{Author}] \rightsquigarrow C_\emph{msg}[(\var{Log})_\emph{last}]$} \Comment $M7$
                 \State \Return false
             \EndIf
         \Else
@@ -250,25 +251,24 @@ To check $M5$ (see Algorithm~\ref{alg:m5}), we need to validate the signature. \
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
-To verify $M7$ and $F1$ (see Algorithm~\ref{alg:m7f1}), we have to go through some of the logs as they must have been known by $M$, i.e. the frontier that the replica of $M_\emph{author}$ must have known about before creating $M$. We check a log, if the corresponding author $A$ appears in the immediate dependencies of $M$ (i.e. $A$ is a key of Authors, as computed in Algorithm~\ref{alg:m4}). If there was a fork for the author $A$ in the causal history of $M$ this means that $M$ violates $F1$. If there was no fork, we need to check that the last message of author $A$ ($(\text{Frontier}[A])_\emph{last}$) happens before or is equal to the corresponding message in the immediate dependencies ($\text{Authors}[A]$).
+To verify $M7$ and $F1$ (see Algorithm~\ref{alg:m7f1}), we have to go through some of the logs as they must have been known by $M$, i.e. the frontier that the replica of $M_\emph{author}$ must have known about before creating $M$. We check a log, if the corresponding author \var{Author} appears in the immediate dependencies of $M$ (i.e. \var{Author} is a key of \var{Authors}, as computed in Algorithm~\ref{alg:m4}). If there was a fork for the author \var{Author} in the causal history of $M$ this means that $M$ violates $F1$. If there was no fork, we need to check that the last message of author \var{Author} ($(\var{Frontier}[\var{Author}])_\emph{last}$) happens before or is equal to the corresponding message in the immediate dependencies ($\var{Authors}[\var{Author}]$).
 
 \subsection{Verifying the invariants \(\delta1\) to \(\delta8\)}
 
-For the following code snippets, we assume that the variables $A_\emph{old}$ and $\deltacc{A}$ have been computed as below. Additionally we assume Frontier has been computed as in Algorithm~\ref{alg:m7f1}.
+For the following code snippets, we assume that the variables $A_\emph{old}$ and $\deltacc{A}$ have been computed as in Algorithm~\ref{alg:dpre}.
+Additionally we assume \var{Frontier} has been computed as in Algorithm~\ref{alg:m7f1}.
+$A_\emph{old}$ represents the old account state and is retrieved from \var{Frontier}, as each log in the frontier also stores the state of the account after replaying the messages.
+$\deltacc{A}$ represents the newly added state and has empty fields for each field that isn't stored (i.e. $A_\uparrow$ and $A_\downarrow$ have $\bot$, $A_\rightarrow$ and $A_\leftarrow$ have $\emptyset$ as empty value).
 \begin{algorithm}
     \caption{Code snippet with relevant account states}
     \label{alg:dpre}
 \begin{algorithmic}
     \Statex \ldots \vphantom{I}
-    \State $A_\emph{old} \gets (\text{Frontier}[M_\emph{author}]_\emph{account})$
+    \State $A_\emph{old} \gets (\var{Frontier}[M_\emph{author}])_\emph{account}$
     \State $\deltacc{A} \gets \acc(M)$
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
-
-$A_\emph{old}$ represents the old account state and is retrieved from Frontier, as each log in the frontier also stores the state of the account after replaying the messages.
-$\deltacc{A}$ represents the newly added state and has empty fields for each field that isn't stored (i.e. $A_\uparrow$ and $A_\downarrow$ have $\bot$, $A_\rightarrow$ and $A_\leftarrow$ have $\emptyset$ as empty value).
-
 
 \begin{algorithm}
     \caption{Code snippet verifying $\delta1$}
@@ -314,37 +314,37 @@ We check that $\delta2$ is satisfied by computing the balance of $A_\emph{new}$ 
     \caption{Code snippet verifying $\delta6$ and $\delta7$}
     \label{alg:d67}
 \begin{algorithmic}
-    \Statex \textbf{Precondition:} Authors has been calculated (as in algorithm~\ref{alg:m4})
+    \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in algorithm~\ref{alg:m4})
     \Statex \ldots \vphantom{I}
-    \State RelevantAuthors $\gets \deltacc{A}_{\rightarrow*} \cup \deltacc{A}_{\leftarrow*}$
+    \State \var{RelevantAuthors} $\gets \deltacc{A}_{\rightarrow*} \cup \deltacc{A}_{\leftarrow*}$
     % ASSUME_CAUSAL_STABILITY
-    \ForAll{$a \in \text{Authors}$} \Comment $\delta6$
-        \If{$a \not\in$ RelevantAuthors}
+    \ForAll{$a \in \var{Authors}$} \Comment $\delta6$
+        \If{$a \not\in$ \var{RelevantAuthors}}
             \State \Return false
         \EndIf
-        \State RelevantAuthors $\gets$ RelevantAuthors $\setminus \{a\}$
+        \State \var{RelevantAuthors} $\gets$ \var{RelevantAuthors} $\setminus \{a\}$
     \EndFor
-    \If{RelevantAuthors $\ne \emptyset$} \Comment $\delta7$
+    \If{\var{RelevantAuthors} $\ne \emptyset$} \Comment $\delta7$
         \State \Return false
     \EndIf
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
 % ASSUME_CAUSAL_STABILITY
-To check $\delta6$ and $\delta7$ (see Algorithm~\ref{alg:d67}) we create the set of authors that are relevant to the transaction, namely the authors that were given tokens and the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared twice in the dependencies, in either case the message is invalid.
+To check $\delta6$ and $\delta7$ (see Algorithm~\ref{alg:d67}) we create the set of authors that are relevant to the transaction \var{RelevantAuthors}, which are the authors that were given tokens and the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared twice in the dependencies, in either case the message is invalid.
 
 % ASSUME_CAUSAL_STABILITY
-To check $\delta7$, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was ``consumed'' in the preceding for loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
+To check $\delta7$, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was fully ``consumed'' in the preceding loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
 \\
 
 \begin{algorithm}
     \caption{Code snippet verifying $\delta3$}
     \label{alg:d3}
 \begin{algorithmic}
-    \Statex \textbf{Precondition:} Authors has been calculated (as in Algorithm~\ref{alg:m4}), $\delta7$ has been checked.
+    \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in Algorithm~\ref{alg:m4}), $\delta7$ has been checked.
     \Statex \ldots \vphantom{I}
-    \ForAll{Author $\in \deltacc{A}_{\leftarrow*}$} \Comment $\delta3$
-        \State $A_\emph{other} \gets (\text{Frontier}[\text{Author}])_\emph{account}$ \label{alg:d3:other}
+    \ForAll{\var{Author} $\in \deltacc{A}_{\leftarrow*}$} \Comment $\delta3$
+        \State $A_\emph{other} \gets (\var{Frontier}[\var{Author}])_\emph{account}$ \label{alg:d3:other}
         \If{$M_\emph{author} \notin (A_\emph{other})_{\rightarrow *}$ or $((A_\emph{other})_\rightarrow)[M_\emph{author}] < \deltacc{A}_\leftarrow$}
             \State \Return false
         \EndIf
@@ -353,7 +353,7 @@ To check $\delta7$, i.e. that all necessary dependencies are present, we can che
 \end{algorithmic}
 \end{algorithm}
 To check $\delta3$ (see Algorithm~\ref{alg:d3}), we must go through the authors that $\deltacc{A}$ claims to acknowledge tokens from and check that these authors actually gave them to the account.
-Since we checked $\delta7$ before this, we know that $A \in \text{keys of Authors}$ for all $A \in \deltacc{A}_{\leftarrow*}$, so $\text{Frontier}[\text{Author}]$ in line \ref{alg:d3:other} must be well defined. \todo{maybe make this more clear}
+Since we checked $\delta7$ before this, we know that $\var{Author} \in \text{keys of \var{Authors}}$ for all $\var{Author} \in \deltacc{A}_{\leftarrow*}$, so $\var{Frontier}[\var{Author}]$ in line \ref{alg:d3:other} must be well defined. \todo{maybe make this more clear}
 \\
 
 \begin{algorithm}
@@ -401,34 +401,40 @@ The check of $\delta8$ is trivial (see Algorithm~\ref{alg:d8}), one just has to 
 
 
 
+\begin{algorithm}
+    \caption{Function that recreates the frontier based on a message}
 \begin{algorithmic}[1]
 \Function{RecreateFrontier}{message $M$}
-    \State Frontier $\gets \emptyset$
+    \State $\var{Frontier} \gets \emptyset$
     \ForAll{message $N \in K(M)$ in topological order}
-        \If{$N_\emph{author}$ is not in the keys of Frontier}
+        \If{$N_\emph{author}$ is not in the keys of \var{Frontier}}
             \State $L \gets \Call{InitializeLog}{N_\emph{author}}$
             \State $L_\emph{last} \gets \msgId(N)$
             \State $L_\emph{account} \gets \acc(N)$
-            \State Frontier$[N_\emph{author}] \gets L$
+            \State $\var{Frontier}[N_\emph{author}] \gets L$
         \Else
-            \State Frontier$[N_\emph{author}] \gets \Call{UpdateLog}{\text{Frontier}[N_\emph{author}], N}$
+            \State $\var{Frontier}[N_\emph{author}] \gets \Call{UpdateLog}{\var{Frontier}[N_\emph{author}], N}$
         \EndIf
     \EndFor
-    \State \Return Frontier
+    \State \Return \var{Frontier}
 \EndFunction
 \end{algorithmic}
+\end{algorithm}
+\begin{algorithm}
+    \caption{Function that updates the log}
 \begin{algorithmic}[1]
 \Function{UpdateLog}{log $L$, message $M$}
     \State \textbf{assumption:} $L_\emph{author} = M_\emph{author}$, message $M$ is given in topological order (i.e. there is no message $M'$ which was given to this function before $M$, such that $M \rightsquigarrow M'$).
     \State \textbf{TODO}
 \EndFunction
 \end{algorithmic}
+\end{algorithm}
 
 
 \subsection{Rationale}
 When storing the messages in a hash graph using a cryptographically secure hash function, $M6$ does not need to be checked, because for someone to create a cycle in a hash graph, they must find a collision which is assumed to be impossible when using such a hash function.
 Invariants $\delta1$, $\delta4$, $\delta5$, $M6$ are straightforward to check, as they only involve data stored in the message in question.
-To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, $M1$, $M2$, $M3$, $M4$, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $MCache[msgId] = M$ where $\msgId(M) = msgId$. This $MCache$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
+To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, $M1$, $M2$, $M3$, $M4$, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $C_\emph{msg}[msgId] = M$ where $\msgId(M) = msgId$. This $C_\emph{msg}$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
 
 Now the only invariants left to check are $\delta2$, $M7$ and $F1$.\todo{write justification on why we need to compute the frontier}
 
@@ -446,7 +452,7 @@ Now the only invariants left to check are $\delta2$, $M7$ and $F1$.\todo{write j
 \hline
 \end{tabular}
 
-\subsection{State of the $\delta$-GOC-Ledger to Track}
+\subsection{State of the \(\delta\)-GOC-Ledger to Track}
 Part of the datastructure is the account, in the following represented as $A$.
 Each account stores 5 values: $A_{id}$, $A_{\uparrow}$, $A_{\downarrow}$, $A_{\rightarrow}$ and $A_{\leftarrow}$. $A_{id}$ is the account identifier and doesn't change.
 $A_{\uparrow}$ and $A_{\downarrow}$ are numbers and represent the number of created and the number of destroyed tokens respectively.
