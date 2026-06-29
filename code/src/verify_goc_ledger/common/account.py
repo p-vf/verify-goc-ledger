@@ -22,8 +22,6 @@ class Log:
         # The following two are assumed to consist of valid commits
         self.last_non_forked: Commit = last_non_forked
         self.fork_proof: set[Commit] = set()
-        # TODO extend this with a "fork frontier" or something with which we can
-        # check whether commits have been validated after a fork (check_if_already_verified)
         self.acked_last_non_forked: bool = True
 
     def __str__(self):

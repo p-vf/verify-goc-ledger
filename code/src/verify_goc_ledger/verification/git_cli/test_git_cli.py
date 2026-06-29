@@ -1,3 +1,5 @@
+import base64
+import json
 import sys
 import os
 import cProfile
@@ -27,7 +29,7 @@ from common.datastructures import Commit
 # def update_ledger(commit: Commit, frontier: dict[bytes, Commit]):
 #     frontier[commit.author_name] = commit
 
-commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%B"
+commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%s"
 num_fields = len(commit_format.split(":"))
 def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
     fields = c.split(b":")
@@ -60,7 +62,6 @@ class GitCliGocVerifier:
         self.account_cache_hits = 0
         self.current_frontiers: dict[bytes, dict[bytes, Log]] = {}
         self.valid_commit_frontier: set[Commit] = set()
-        self._forks: dict[bytes, set[bytes]] = {}
 
         self.perf_statistics = PerfStatistics(enable_perf_stats)
 
@@ -71,7 +72,6 @@ class GitCliGocVerifier:
         self._account_cache = {}
         self.account_cache_hits = 0
         self.current_frontiers = {}
-        self._forks = {}
 
         #self._forks = self.extract_forks()
 
@@ -427,7 +427,7 @@ class GitCliGocVerifier:
 
     def update_frontier(self, account: Account | None, frontier: Frontier, last_message: Commit):
         # print(f"updating frontier {frontier} with {account}, {last_message}")
-        """ASSUMPTION accounts get added in reverse topological order!! (relevant for message_id)"""
+        """ASSUMPTION updates get added in reverse topological order!! (relevant for last_message)"""
         author = last_message.author_name
         if author in frontier:
             self.update_log(frontier[last_message.author_name], last_message, account)
@@ -503,53 +503,80 @@ class GitCliGocVerifier:
         res = []
         id = commit.tree
         # tree, err = self.retrieve_and_parse_tree_read_blob_content(id)
-        tree, err = self.retrieve_tree_content(id)
-        if err:
+        err = []
+        data, *debug = commit.body.split(b" ", 1)
+        try:
+            j = base64.b64decode(data).decode()
+        except Exception as e:
+            err.append(f"decoding of b64 failed: {e.args}, data before decoding: {data}")
             return a, err
-        # === Minimality of delta account checks Part 1 ===
-        for child, blob_data in tree.items():
-            field_path = child.split("/", 1)
-            if len(field_path) > 2:
-                return a, [f"field path {child} too long"]
-            if len(field_path) == 0:
-                # Not sure this can ever happen..
-                return a, [f"field path {child} too short"]
-            err = ""
-            match field_path[0]:
-                case "c":
-                    if len(field_path) > 1:
-                        return a, [f"field path {child} too long"]
-                    number, err = int_from_bytes(blob_data)
-                    if number == 0:
-                        res.append("unnecessary zero value stored in field 'c'")
-                    if len(err) > 0:
-                        res.append(f"field {child} of tree {id}: {err}")
-                    a.created = number
-                case "d":
-                    if len(field_path) > 1:
-                        return a, [f"field path {child} too long"]
-                    number, err = int_from_bytes(blob_data)
-                    if number == 0:
-                        res.append("unnecessary zero value stored in field 'd'")
-                    if len(err) > 0:
-                        res.append(f"field {child} of tree {id}: {err}")
-                    a.destroyed = number
-                case "a":
-                    if len(field_path) < 2:
-                        return a, [f"field path {child} too short"]
-                    number, err = int_from_bytes(blob_data)
-                    if err:
-                        res.append(f"error when parsing blob_content: {err}")
-                    a.acked[field_path[1].encode()] = number
-                case "g":
-                    if len(field_path) < 2:
-                        return a, [f"field path {child} too short"]
-                    number, err = int_from_bytes(blob_data)
-                    if err:
-                        res.append(f"error when parsing blob_content: {err}")
-                    a.given[field_path[1].encode()] = number
-                case x:
-                    res.append(f"there is an unnecessary field in the tree: {x}")
+        try:
+            tree: dict = json.loads(j)
+        except Exception as e:
+            err.append(f"decoding failed: {e.args}, json before decoding: {j}")
+            return a, err
+        else:
+            # tree, err = self.retrieve_tree_content(id)
+            # === Minimality of delta account checks Part 1 ===
+            for child in tree:
+                err = ""
+                match child:
+                    case "c":
+                        number = tree[child]
+                        if not isinstance(number, int):
+                            res.append("blob expected in field 'c', got something else (probably tree)")
+                            continue
+                        if number == 0:
+                            res.append("unnecessary zero value stored in field 'c'")
+                        if len(err) > 0:
+                            res.append(f"field {child} of tree {id}: {err}")
+                        a.created = number
+                    case "d":
+                        number = tree[child]
+                        if not isinstance(number, int):
+                            res.append("blob expected in field 'd', got something else (probably tree)")
+                            continue
+                        if number == 0:
+                            res.append("unnecessary zero value stored in field 'd'")
+                        if len(err) > 0:
+                            res.append(f"field {child} of tree {id}: {err}")
+                        a.destroyed = number
+                    case "a":
+                        subtree = tree[child]
+                        if not isinstance(subtree, dict):
+                            res.append("tree expected in field 'a', got something else (probably blob)")
+                            continue
+                        if not subtree:
+                            res.append("unnecessary field 'a' (empty mapping)")
+                        for entry in subtree:
+                            number = subtree[entry]
+                            if not isinstance(number, int):
+                                res.append("blob expected in field 'a', got something else (probably tree)")
+                                continue
+                            if number == 0:
+                                res.append("unnecessary zero value stored in mapping 'a'")
+                            if len(err) > 0:
+                                res.append(f"field {child}/{entry} of tree {id}: {err}")
+                            a.acked[entry.encode()] = number
+                    case "g":
+                        subtree = tree[child]
+                        if not isinstance(subtree, dict):
+                            res.append("tree expected in field 'g', got something else (probably blob)")
+                            continue
+                        if not subtree:
+                            res.append("unnecessary field 'g' (empty mapping)")
+                        for entry in subtree:
+                            number = subtree[entry]
+                            if not isinstance(number, int):
+                                res.append("blob expected in field 'g', got something else (probably tree)")
+                                continue
+                            if number == 0:
+                                res.append("unnecessary zero value stored in mapping 'g'")
+                            if len(err) > 0:
+                                res.append(f"field {child}/{entry} of tree {id}: {err}")
+                            a.given[entry.encode()] = number
+                    case x:
+                        res.append(f"there is an unnecessary field in the tree: {x}")
 
         self._account_cache[commit.id] = (a, len(res) == 0)
         return a, res

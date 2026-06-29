@@ -1,3 +1,5 @@
+import base64
+import json
 import subprocess
 import os
 import sys
@@ -250,29 +252,27 @@ ref_fmt_last = "refs/heads/%s/last"
 
 def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict[bytes, int] | None = None, given: dict[bytes, int] | None = None):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
-    tree_data: TreeDict = {}
+    tree_data: dict[str, int | dict[str, int]] = {}
     if created is not None:
-        tree_data["c"] = int_to_bytes(created)
+        tree_data["c"] = created
     if destroyed is not None:
-        tree_data["d"] = int_to_bytes(destroyed)
+        tree_data["d"] = destroyed
 
     if given is not None: # if given non-empty
-        tree_given: TreeDict = {}
+        tree_given: dict[str, int] = {}
         for account_id, num in given.items():
             assert isinstance(account_id, bytes)
-            tree_given[account_id.decode()] = int_to_bytes(num)
+            tree_given[account_id.decode()] = num
         tree_data["g"] = tree_given
 
     if acked is not None: # if acked non-empty
-        tree_acked: TreeDict = {}
+        tree_acked: dict[str, int] = {}
         for account_id, num in acked.items():
             assert isinstance(account_id, bytes)
-            tree_acked[account_id.decode()] = int_to_bytes(num)
+            tree_acked[account_id.decode()] = num
         tree_data["a"] = tree_acked
 
-    tree_hash = repo.create_tree(tree_data, "account")
-    commit_hash = repo.create_commit(tree_hash, deps, author, date, msg).decode()
-    repo.reset_index()
+    commit_hash = repo.create_commit(empty_tree, deps, author, date, base64.b64encode(json.dumps(tree_data).encode()).decode() + " " + msg).decode()
     repo.update_ref(ref_fmt_last % author, commit_hash)
     return commit_hash
 
