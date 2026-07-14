@@ -36,6 +36,8 @@
 \newcommand{\fields}[1]{#1_\textit{fields}}
 \newcommand{\var}[1]{\textsl{#1}}
 \newcommand{\msgType}[0]{\texttt{MsgType}}
+\newcommand{\forkproof}[0]{\var{forkProof}}
+\newcommand{\definedas}[0]{\stackrel{def}{=}}
 \setlength{\marginparwidth}{100pt}
 
 \section*{Abstract}
@@ -50,19 +52,153 @@ Contributions:
 \begin{enumerate}
     \item algorithm for verifying GOC-Ledger state.
     \item efficient encoding of delta account as commit messages.
-    \item proposal with new message type and invariant it must satisfy (that it must address a fork that wasn't present in the frontier before)
-    \item invariants $\delta1$ to $\delta8$ and $F1$
+    \item proposal of new message type (byzantine acknowledgement)
+    \item invariants $\delta1$ to $\delta8$ and $F1$ to $F3$
 \end{enumerate}
 TODO
 
-\section{Background / Terminology / Invariants} \todo{add description of the used notation here}
-\todo{introduce concepts}
+\section{Background}
+In this section, relevant background to the concepts in this project are provided. \\
+
+\subsection{Append-only logs as Hash-Graphs}
+An Append-only log is a distributed data structure that allows participants to share messages between each other. This is done by having each participant have a totally ordered set of messages that gets replicated to the other participants. This can be implemented using hash-graphs, where each message contains the hash of the previous message (if there is any) of the same author. By using a cryptographic hash, we know the messages cannot have been tampered with, as hash-collisions are computationally hard to find. By cryptographically signing the messages we can guarantee that the correct author created the message.
+
+However one problem that arises is that an adversary E can create two messages that are concurrent to each other by referencing the same previous message and distributing each of those messages to different parts of the network. Once the correct participants have replicated these messages, this results in the set of messages belonging to E no longer being totally ordered, breaking the design of naive implementations of append-only logs. In this scenario we say that the log of E is \emph{forked}.
+
+If the append-only log is implemented as a hash-graph, dependencies between messages of different authors can be modelled by including a set of hashes into a message which represent its immediate dependencies. Such dependencies are necessary to order messages by causality, i.e. if there is a hash in the dependencies of message A belonging to message B, we know the message B must have been created before the message A (see happens-before relationship, eqn. \ref{eqn:happens-before}).
+
+\subsection{2P-BFT-Log}
+2P-BFT-Log is a design that implements an append-only log data structure and behaves just like one as long as there are no forks. As soon as there is evidence of a fork in a log, any further messages of the corresponding author are ignored \cite{2p-bft-log}. If there is no fork in a given log, the log is said to be in the \emph{growing phase}, otherwise it is in the \emph{shrinking phase}.
+
+\subsubsection{Messages}
+The design of 2P-BFT-Log consists of several parts. First of all, each message has certain contents, each of which is called a field. The fields of a message and their corresponding type and meaning are listed in Table \ref{tab:2p-bft-log-msg-content}.
+
+\begin{table}
+    \begin{tabular}{|l|l|p{5cm}|}
+    \hline
+    \textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+    \hline
+    $M_\emph{author}$ & String (Public Key) & author of the message \\
+    $M_\emph{prev}$ & MsgId or $\bot$ & previous message from same author, $\bot$ (null) if none.\\
+    $M_\emph{deps}$ & Set of MsgId & State of logs from other authors on which the message depends\\
+    $M_\emph{payload}$ & String & Content of message, in our case representing either an account update or a byzantine acknowledgement (see sections \ref{sec:account-as-str} and \ref{sec:ack-as-str} respectively) \\
+    $M_\emph{signature}$ & String & Signature of the concatenation of the previous fields using the private key corresponding to $M_\emph{author}$.\\
+    \hline
+    \end{tabular}
+    \caption{Contents of a message according to the design of 2P-BFT-Log}
+    \label{tab:2p-bft-log-msg-content}
+\end{table}
+
+To identify and reference messages, the function $\msgId$ is used.
+It is the hash derived from the concatenation of the contents of the message, i.e.
+\[
+    \msgId(M) \definedas H(M_\emph{author} \oplus M_\emph{prev} \oplus M_\emph{deps} \oplus M_\emph{payload} \oplus M_\emph{signature})
+\]
+where $H$ is a cryptographic hash function.
+
+Additionally there are some relevant relations that are defined on messages.
+The first one is the \emph{happens-before} relationship and is defined as:
+\begin{equation}
+    M \rightsquigarrow M' \definedas \begin{cases}
+        M = M'_\emph{prev} = \bot \\
+        \msgId(M) = M'\emph{prev} \\
+        \msgId(M) \in M'\emph{deps} \\
+        \exists M'' : M \rightsquigarrow M'' \rightsquigarrow M'
+    \end{cases}
+    \label{eqn:happens-before}
+\end{equation}
+
+Based on the happens-before relationship, the partial order on messages ($\le_\mathcal{M}$) is defined:\todo{is this relevant for my report?}
+\[
+    M \le_\mathcal{M} M' \definedas M = M' \lor M \rightsquigarrow M'
+\]
+
+If neither $M$ or $M'$ is smaller than the other, they are called concurrent ($\parallel_\mathcal{M}$). \todo{is this relevant for my report?}
+\[
+    M \parallel_\mathcal{M} M' \definedas M {\nleq_\mathcal{M}} M' \land M' {\nleq_\mathcal{M}} M
+\]
+
+We define the strict causal history of message $M$ as the messages that happened before message $M$:
+\[
+    \mathcal H_<(M) \definedas \{M' : M' \rightsquigarrow M\}
+\]
+Additionally we define the causal history of message $M$ as
+\[
+    \mathcal H_\le(M) \definedas \{M' : M' \le_\mathcal{M} M\}
+\]
+
+If $S$ is a set of messages, the (strict) causal history of $S$ is overloaded and means the (strict) causal history of all the messages in $S$ combined.
+\[
+    \mathcal H_r(S) \definedas \bigcup_{M \in S}\mathcal H_r(M)
+\]
+
+A fork proof is a set of messages which all have the same previous message. We define fork proofs as a predicate $\forkproof$ over a set of messages $S$.
+\[
+    \forkproof(S) \definedas \bigwedge_{M, M' \in S} M_\emph{prev} = M'_\emph{prev}
+\]
+
+\subsubsection{Logs}
+A log in the context of 2P-BFT-Log is defined as a datastructure that keeps track of the state of the application. Log $L$ has the fields $L_\emph{author}$, $L_\emph{last}$ which contains the last message of this author and $L_\emph{forks}$ which contains the oldest known fork proof of this author. \todo{if necessary add more description here}
+
+\subsubsection{Frontier}
+TODO
+
+\subsection{\(\delta\)-GOC-Ledger}
+
+The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how much tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors form the state of the ledger. More concretely, a ledger $L$ is a mapping from authors to their corresponding account.
+
+In the case of the GOC-Ledger, this is realized by introducing 5 fields: $A_\emph{author}$ which is the author of this account, $A_\uparrow$ and $A_\downarrow$ which represent the number of created/destroyed tokens respectively, $A_\rightarrow$ and $A_\leftarrow$ which represent the number of given/received tokens respectively. $A_\uparrow$ and $A_\downarrow$ are simple grow-only counters whereas $A_\rightarrow$ and $A_\leftarrow$ are mappings from author names to grow-only counters, which represent the number of tokens $A_\emph{author}$ has given to or acknowledged from the other author respectively.
+
+For ease of writing, the notation $S_*$ is defined to be the domain of definition of a mapping $S$. E.g. if $L$ is a ledger, $L_*$ denotes the set of authors that have an account in this ledger. \todo{where should I put this definition?}
+
+To get the balance of an account, we can compute \[A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\].
+Additionally there is a merge operation with which accounts can be merged. This merge function is only defined on accounts of the same author and returns the account that contains the maximal values of all the grow only counters in both of the accounts and adds all the grow-only counters that are only in one of the two accounts. \todo{write down the definition of this merge operation}
+
+Furthermore, there is also a merge operation on the ledger. The ledger gets merged into one by merging accounts of the same author from different ledgers and adding the accounts to the resulting set which only occur in one of the ledgers. \todo{define this more precisely if necessary?}
+
+The merge operation between two objects is denoted $\sqcup$.
+
+\subsubsection{Delta-states}
+To store the state of the ledger more efficiently with regards to space, only the grow-only counters that have changed have to be stored. This is done via delta accounts. A delta account $A^\delta$ has the same fields as a normal account, just that the fields $A^\delta_\uparrow$ and $A^\delta_\downarrow$ can have a null value (denoted $\bot$) which represents a missing value. Such a null value is not needed for $A^\delta_\rightarrow$ and $A^\delta_\leftarrow$ because the empty set is a natural empty value. When merging delta accounts, one can use a slightly modified version of the merge operation on normal accounts, one just has to treat $\bot$ as a 0.
+
+\todo{maybe add example?}
+
+\section{Terminology}
+\todo{add description of the used notation here}
 \todo{introduce induced frontier}
-\todo{define fields $(\cdot)_\emph{fields}$ of Accounts}
+\todo{maybe define fields $(\cdot)_\emph{fields}$ of Accounts}
+
+The function \var{deps} of message $M$ is defined as the messages in its immediate dependencies.
+\[\var{deps}(M) \definedas \{M' \mid \msgId(M') \in M_\emph{deps}\}\]
+
+Similarly, the function \var{prev} of $M$ denotes its previous message.
+\[\var{prev}(M) \definedas \begin{cases}
+    M' &\text{ if there exists } M' : \msgId(M') = M_\emph{prev}\\
+    \bot & \text{ otherwise}
+\end{cases} \]
+
+\section{Detecting Byzantine Behaviour}
+For specifying invariants related to byzantine behaviour, it is necessary to define what we consider as byzantine behaviour. This is mostly based on the Blocklace paper by Almeida et al. \cite{blocklace-crdt}, but was adapted to the design of 2P-BFT-Log.
+The function \var{byz} of a set of messages $S$ is the set of authors exhibiting byzantine behaviour in the set $S$ and is defined as follows:
+\begin{align*}
+    \var{byz}(S) \definedas \{a \mid\,&\exists M \in S : \\
+    &a = M_\emph{author}\\
+    &\land \textsc{CheckSignature}(M)\\
+    &\land (\\
+    &\qquad \exists P \subseteq S : \forkproof(P) \land M \in P\\
+    &\qquad \lor \lnot \var{wellFormed}(M)\\
+    &\qquad \lor \lnot \var{valid}(M) \\
+    &)\}
+\end{align*}
+
+Where $\textsc{CheckSignature}$ of message $M$ is the predicate that is true iff $M_\emph{signature}$ is a valid signature belonging to $M_\emph{author}$, $\var{wellFormed}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and $\var{valid}(M)$ is a predicate that is true if further invariants hold for the message specified in section \ref{sec:invariants}.
+
+\section{Invariants}
+\label{sec:invariants}
 
 \subsection{Invariants on delta account \(\deltacc{A}\)}
 \label{sec:invariants-delta-a}
-The following invariants depend on the state of the ledger before the update of $\deltacc A$ is performed ($L_\textit{before}$).
+Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was performed.
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$, so $L_\emph{after} = L_\emph{before} \sqcup \deltacc{A}$. \todo{write $A_\emph{old}$ instead of $L_\emph{before}$ where appropriate}
 \begin{enumerate}
     \item [$\delta1$] (minimal) Any field in the delta account must increase the state of the Ledger (otherwise it would not have to be stored) so for any field $\deltacc{F} \in \fields{(\deltacc{A})}$, $L_\emph{before} \neq L_\emph{before} \sqcup \deltacc{F}$ must hold.
@@ -117,18 +253,26 @@ Additionally, the date of the message can be checked. This is not necessary for 
 %     \item [FL7] \emph{(consistent proof)}: for all $M \in L_\textit{forks}$, $L_\textit{last} = M_\textit{prev}$.
 % \end{enumerate}
 
-\subsection{Further Invariants related to Forking}
-We want to ensure that authors don't make any transactions with an author that has a forked log. To enforce this, the following invariant for message $M$ has to be checked: if there is a fork proof $\{M', M''\}$ (meaning $M'$, $M''$ are valid, from the same author $author$ and $M'_\emph{prev} = M''_\emph{prev}$) in the messages that are known to $M_\emph{author}$ at the time of creating $M$ (denoted $K(M)$), $M_\emph{deps}$ must not contain a message created by the author which created the fork, even if it references a message before the fork (see invariant $F1$).
-The set of messages known to $M$, $K(M)$ is defined as all the messages reachable from the dependencies $M_\emph{deps}$ and $M_\emph{prev}$, or more formally the set $K(M) = \{M' \mid M' \rightsquigarrow M\}$.
-We also want to ensure that participants don't make transactions with users that haven't acknowledged the forks present in the message graph, i.e. if there is a fork in the log, all the immediate dependencies know about this fork proof. An exclusion is made for fork acknowledgement messages, as by design, they cannot fulfil this criteria.
+\subsection{Invariants related to Byzantine Behaviour}
+We want to ensure that authors don't make any transactions with an author that has created messages that exhibit byzantine behaviour. To enforce this, the following invariant for message $M$ has to be checked: if there is a fork proof $\{M', M''\}$ (meaning $M'$, $M''$ are valid, from the same author $author$ and $M'_\emph{prev} = M''_\emph{prev}$) in the messages that are known to $M_\emph{author}$ at the time of creating $M$ (denoted $K(M)$), $M_\emph{deps}$ must not contain a message created by the author which created the fork, even if it references a message before the fork (see invariant $F1$).
+The set of messages known to $M$, $K(M)$ is defined as all the messages reachable from the dependencies $M_\emph{deps}$ and $M_\emph{prev}$, or more formally the set $K(M) = \{M' \mid M' \rightsquigarrow M\}$. If $S$ is a set of messages, $K(S)$ is defined as the set of messages reachable from any of the messages in $S$, i.e. $K(S) := \bigcup_{M \in S} K(M) \cup S$.
+
+We also want to ensure that participants don't make transactions with users that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in set of messages known to a message, all its immediate dependencies must know about this (see invariant $F2$). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
+
+To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant $F3$).
+
 \begin{enumerate}
-    \item [$F1$] \emph{(No messages after fork)} If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any fork proof $P$ of the log of author $a$ with $P \subseteq K(M)$, there must be no message $M'$ with $\msgId(M') \in M_\emph{deps}$ and $M'_\emph{author} = a$.
-    \item [$F2$] \emph{(Fork acknowledgement)} If $\msgType(M) = \var{ACCOUNT}$ then the following must hold: \\
-    \begin{itemize}
-        \item For any message $M' \in \{N \mid \msgId(N) \in M_\emph{deps} \vee \msgId(N) = M_\emph{prev}\}$ and fork proof $P \subseteq K(M)$, $P \subseteq K(M')$ must hold. \\
-    \end{itemize}
-    If $\msgType(M) = \var{FORK\_ACK}$ then there must exist a fork proof $P \subseteq K(M)$, such that $P \not\subseteq K(M')$ where $M'$ is the message with $\msgId(M') = M_\emph{prev}$.
+    \item [$F1$] \emph{(No transactions after byzantine message)} If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any author $a \in \var{byz}(K(M))$, there must be no message $M' \in \var{deps}(M)$ with $M'_\emph{author} = a$.
+    \item [$F2$] \emph{(acknowledgement before transaction)} If $\msgType(M) = \var{ACCOUNT}$ then the following must hold for any message $M' \in \var{deps}(M)$: \\
+    $\var{byz}(K(M)) = \var{byz}(K(M'))$.
+    \item [$F3$] \emph{(necessary dependencies of acknowledgement)}
+    If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $\var{byz}(K(\var{deps}(M) \setminus \{M'\})) \subset \var{byz}(K(M))$ must hold.
 \end{enumerate}
+
+\section{Syntax of Messages}
+\label{sec:syntax-of-msgs}
+A message $M$ is well formed, if $M_\emph{payload}$ contains a valid string that encodes either a delta account or a byzantine acknowledgement.
+TODO
 
 \section{Algorithm for Verification}
 To verify messages, the messages are visited in an arbitrary topological order according to the relation $\le_\mathcal{M}$, meaning if $M \rightsquigarrow M'$, $M$ must be visited before $M'$. Each message gets checked for the invariants and if it is valid, it is added to the set of valid message ids $F_\emph{valid}$. \footnote{If memory is a concern, the immediate predecessors of $M$ can be removed from $F_\emph{valid}$ and the check if a message $M'$ has been validated before becomes is there a $\var{msgId} \in F_\emph{valid}$ with $M'  \le_\mathcal{M} C_\emph{msg}[\var{msgId}]$. This makes $F_\emph{valid}$ a sort of frontier of valid messages.}
@@ -153,19 +297,21 @@ To verify messages, the messages are visited in an arbitrary topological order a
 \end{algorithm}
 
 The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$.
+For readability the function \textsc{VerifyMessage} was split up into multiple conditions which return false if violated. These conditions are listed in sections \ref{sec:m-invariant-checks} and \ref{sec:delta-invariant-checks}.
+
 \begin{algorithm}
     \caption{Basic structure of the function verifying individual messages}
 \begin{algorithmic}
 \Function{VerifyMessage}{message $M$, message cache $C_\emph{msg}$, $F_\emph{valid}$}
-    \State \ldots \Comment checks that return false if failed, listed in following sections
+    \State \ldots \Comment checks that return false if violated (see sections \ref{sec:m-invariant-checks} and \ref{sec:delta-invariant-checks})
     \State \Return true
 \EndFunction
 \end{algorithmic}
 \end{algorithm}
 
-For readability the function \textsc{VerifyMessage} was split up into multiple parts, which now follow.
 
 \subsection{Verifying the invariants \(M1\) to \(M7\) and \(F1\)}
+\label{sec:m-invariant-checks}
 
 The invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$, see Table \ref{tab:invariant-code-msg}. Each of the simple conditions corresponds to an if statement that returns false if the condition is met. The invariants $M4$, $M7$ and $F1$ are now explained in greater detail.
 
@@ -232,6 +378,7 @@ The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks i
 To verify $M7$ and $F1$ (see Algorithm~\ref{alg:m7f1}), we have to go through some of the logs as they must have been known by $M$, i.e. the frontier that the replica of $M_\emph{author}$ must have known about before creating $M$. We check a log, if the corresponding author \var{Author} appears in the immediate dependencies of $M$ (i.e. \var{Author} is a key of \var{Authors}, as computed in Algorithm~\ref{alg:m4}). If there was a fork for the author \var{Author} in the causal history of $M$ this means that $M$ violates $F1$. If there was no fork, we need to check that the last message of author \var{Author} ($(\var{Frontier}[\var{Author}])_\emph{last}$) happens before or is equal to the corresponding message in the immediate dependencies ($\var{Authors}[\var{Author}]$).
 
 \subsection{Verifying the invariants \(\delta1\) to \(\delta8\)}
+\label{sec:delta-invariant-checks}
 
 For the following code snippets, we assume that the variables $A_\emph{old}$, $\deltacc{A}$ and $A_\emph{new}$ have been computed as in Algorithm~\ref{alg:dpre}.
 Additionally we assume \var{Frontier} has been computed as in Algorithm~\ref{alg:m7f1}.
