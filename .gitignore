@@ -15,10 +15,11 @@ db/
 **/*.stats
 testcases/
 benchmarks/
+*.pdf
+!figures/*.pdf
 
 # LaTeX-generated files
 *.aux
-*.pdf
 *.log
 *.fdb_latexmk
 *.fls
