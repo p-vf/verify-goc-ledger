@@ -81,7 +81,7 @@ def main():
                 max_time = max_time_from_this_category
 
         for benchmark_names, stat_dict, file_prefix in zip(benchmark_namess, stat_dicts, file_prefixes):
-            fig, ax = plt.subplots(figsize=(7,7))
+            fig, ax = plt.subplots(figsize=(7,6))
             ax.set_ylim(ymax=max_time*1.05)
             ax.set_xmargin(0.15)
             bottom = np.zeros(len(benchmark_names))
@@ -95,12 +95,14 @@ def main():
                         continue
                     ax.text(i, bottom[i] + val / 2, f"{val:.3}", va='center', ha='center')
                 bottom += np.array(times)
-            p = ax.bar(benchmark_names, stat_dict["REMAINING"], 0.5, label="REMAINING", bottom=(bottom))
+            p = ax.bar(benchmark_names, stat_dict["REMAINING"], 0.5, label="remaining", bottom=(bottom))
             for i, val in enumerate(stat_dict["REMAINING"]):
                 time = y=bottom[i] + val
                 ax.text(i, time, f"{time:.3}", fontdict=None, va='bottom', ha='center')
 
             ax.set_title(test_dir)
+            ax.set_xlabel("Number of Commits")
+            ax.set_ylabel("Runtime (s)")
             ax.legend(loc="upper left")
 
             os.makedirs(output_dir_full, exist_ok=True)

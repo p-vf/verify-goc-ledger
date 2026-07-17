@@ -103,6 +103,31 @@ def get_some_entry(s: set[T]) -> T:
     """
     return next(iter(s))
 
+def get_public_keys(keydir: Path, no_ids: int):
+    ids: list[str] = []
+    run_cmd(f"mkdir -p {keydir}") # in case the key directory doesn't exist
+    for n in range(no_ids):
+        run_cmd(f"ssh-keygen -f {keydir/str(n)} -N \"\" -q -t ed25519 -C \"\"") # if the keys don't exist, create them
+        new_id = run_cmd(f"ssh-keygen -f {keydir/str(n)} -e | head -n 3 | tail -n 1").decode().strip()
+        ids.append(new_id)
+        filename = author_to_filename(new_id)
+        os.rename(keydir/(str(n) + ".pub"), keydir/(filename + ".pub"))
+        os.rename(keydir/str(n), keydir/filename)
+    return ids
+
+def author_to_filename(author_id: str):
+    return base64.b64encode(author_id.encode()).decode()
+
+def configure_allowed_signers(repo_dir: Path, keydir: Path, author_names: list[str]):
+    allowed_signers_path = "allowed_signers.txt"
+    with open(repo_dir/allowed_signers_path, "w") as file:
+        lines = []
+        for a in author_names:
+            lines.append(" namespace=\"git\" " + run_cmd(f"cat {keydir/author_to_filename(a)}.pub").decode().strip() + "\r\n")
+        file.writelines(lines)
+
+    run_cmd(f"git config gpg.ssh.allowedSignersFile {allowed_signers_path}", cwd=str(repo_dir))
+
 def validate_hash(hash: str, hashname: str | None = None, throw=True):
     #run_cmd("git fsck --no-reflogs --full --dangling --lost-found", "db")
     # if hashname is None:

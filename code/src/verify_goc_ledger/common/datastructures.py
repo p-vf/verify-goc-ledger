@@ -5,13 +5,14 @@ class Commit:
     Here we always assume that author and committer are the same. The check has
     to be done by the commit parser.
     """
-    def __init__(self, id, tree, parents, author_name, author_email, author_date, body):
+    def __init__(self, id, tree, parents, author_name, author_email, author_date, signature_status, body):
         self.id: bytes = id
         self.tree: bytes = tree
         self.parents: list[bytes] = parents
         self.author_name: bytes = author_name
         self.author_email: bytes = author_email
         self.author_date: bytes = author_date
+        self.signature_status: bytes = signature_status
         self.body: bytes = body
 
     def __eq__(self, other):

@@ -9,8 +9,8 @@ type Frontier = dict[bytes, Log]
 
 class MessageType(Enum):
     DELTA_ACC = 1
-    FORK_PROOF = 2
-    FORK_ACK = 3
+    FORK_PROOF = 2 # TODO remove this
+    BYZ_ACK = 3
 
 class Log:
     def __init__(self, author: bytes, last_non_forked: Commit, account=None):

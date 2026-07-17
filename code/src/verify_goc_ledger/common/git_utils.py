@@ -6,17 +6,19 @@ import sys
 
 from pathlib import Path
 from typing import Sequence, Iterable
+
 parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
 from common.datastructures import Commit
-from common.misc import run_cmd, int_to_bytes
+from common.misc import run_cmd, int_to_bytes, author_to_filename
 from common.account import Account
 
 empty_tree = ""
 empty_blob = ""
 try:
-    empty_tree = run_cmd("git mktree </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
+    # empty_tree = run_cmd("git mktree </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
+    empty_tree = "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321" # HACK we assume the repository uses SHA256
     empty_blob = run_cmd("git hash-object --stdin </dev/null").strip().decode() # HACK we assume we are in a repository here. Since this code is located in a repository, this will not fail as long as it is run here (from `code/`).
 except:
     raise Exception("outside a git repository")
@@ -45,7 +47,7 @@ class Repo:
             message = " "
         cmd = ["git"]
         if sign and self.keydir is not None:
-            cmd += ["-c", f"user.signingkey={self.keydir/author_name}.pub"]
+            cmd += ["-c", f"user.signingkey={self.keydir/author_to_filename(author_name)}.pub"]
         cmd += ["commit-tree", tree, "-m", message]
         if self.keydir is not None:
             cmd += ["-S"]
@@ -57,9 +59,9 @@ class Repo:
             env["GIT_AUTHOR_DATE"] = f"{date} +0100"
             env["GIT_COMMITTER_DATE"] = f"{date} +0100"
         env["GIT_AUTHOR_NAME"] = author_name
-        env["GIT_AUTHOR_EMAIL"] = author_name + "@gitgen.com"
-        env["GIT_COMMITTER_NAME"] = author_name
-        env["GIT_COMMITTER_EMAIL"] = author_name + "@gitgen.com"
+        env["GIT_AUTHOR_EMAIL"] = ""
+        env["GIT_COMMITTER_NAME"] = "-"
+        env["GIT_COMMITTER_EMAIL"] = ""
         return run_cmd(cmd, self.git_path, env)[:-1]
 
     def create_blob(self, data: bytes):
@@ -70,7 +72,7 @@ class Repo:
         return res
 
     def create_repo(self):
-        run_cmd(f"git init {self.git_path}")
+        run_cmd(f"git init --object-format sha256 {self.git_path}")
         run_cmd("git config gpg.format ssh", cwd=self.git_path)
 
     def create_tree(self, data: TreeDict, dir: str) -> str:
@@ -232,7 +234,7 @@ def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[st
         given = None
 
     ref_fmt_str = "refs/heads/%s/last"
-    previous = repo.show_ref(ref_fmt_str % (acc.id.decode()))
+    previous = repo.show_ref(ref_fmt_str % (author_to_filename(acc.id.decode())))
     assert len(previous) <= 1
 
     if len(previous) == 0: # if this is the first commit of this author, don't add parents.
@@ -272,8 +274,8 @@ def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: st
             tree_acked[account_id.decode()] = num
         tree_data["a"] = tree_acked
 
-    commit_hash = repo.create_commit(empty_tree, deps, author, date, base64.b64encode(json.dumps(tree_data).encode()).decode() + " " + msg).decode()
-    repo.update_ref(ref_fmt_last % author, commit_hash)
+    commit_hash = repo.create_commit(empty_tree, deps, author, date, json.dumps(tree_data)).decode()
+    repo.update_ref(ref_fmt_last % author_to_filename(author), commit_hash)
     return commit_hash
 
 fork_proof_author_name = "FORK_PROOF"
@@ -287,5 +289,5 @@ def add_fork_ack(repo: Repo, author: str, fork_proof_ids: list[str], date: int):
 
 def add_fork_ack_plumbing(repo: Repo, author: str, parents: list[str], date: int):
     commit_hash = repo.create_commit(empty_tree, parents, author, date, fork_ack_msg).decode()
-    repo.update_ref(ref_fmt_last % author, commit_hash)
+    repo.update_ref(ref_fmt_last % author_to_filename(author), commit_hash)
     return commit_hash

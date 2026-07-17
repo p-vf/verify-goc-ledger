@@ -1,12 +1,15 @@
 import random
 import sys
 import abc
+import os
+import time
+import base64
 
 from pathlib import Path
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
-from common.misc import run_cmd, validate_hash, generate_human_names, ask_if_remove_dir, ParetoSampler
+from common.misc import author_to_filename, run_cmd, validate_hash, generate_human_names, ask_if_remove_dir, ParetoSampler, get_public_keys, configure_allowed_signers
 from common.account import Account
 from common.git_utils import Repo, add_delta_account_as_commit
 
@@ -19,7 +22,7 @@ class BaseRepoGenerator(abc.ABC):
         self._seed = seed
         self.keydir = self._repo_dir/"keys"
         self.repo = Repo(str(self._repo_dir), self.keydir.absolute() if self._sign else None)
-        self.authors = generate_human_names(self._num_users)
+        self.authors = None
         self.kwargs = kwargs
         self.authorkeys = None
 
@@ -38,7 +41,8 @@ class BaseRepoGenerator(abc.ABC):
         random.seed(self._seed)
 
         if self._sign:
-            self.authorkeys = get_public_keys(self.keydir, self.authors)
+            self.authorkeys = get_public_keys(self.keydir, self._num_users)
+            self.authors = self.authorkeys
             configure_allowed_signers(self._repo_dir, self.keydir, self.authors)
             print("created or read authors:")
             print("authors:", self.authorkeys, "\ncorresponding names:", self.authors)
@@ -47,6 +51,7 @@ class BaseRepoGenerator(abc.ABC):
 class ValidRepoGeneratorV1(BaseRepoGenerator):
     def generate_impl(self) -> bool:
         ledger: dict[bytes, Account] = dict()
+        assert isinstance(self.authors, list)
 
         for a in self.authors:
             ledger[a.encode()] = Account(a.encode())
@@ -95,6 +100,7 @@ class ValidRepoGeneratorPareto(BaseRepoGenerator):
         else:
             k = 2
         assert k > 0, "parameter k must be > 0"
+        assert isinstance(self.authors, list)
 
         ledger: dict[bytes, Account] = dict()
 
@@ -159,6 +165,7 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
         else:
             ack_delay = 10
         assert ack_delay > 0, "parameter ack_delay must be > 0"
+        assert isinstance(self.authors, list)
 
         ledger: dict[bytes, Account] = dict()
 
@@ -171,7 +178,8 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
         for account in ledger.values():
             act = account.create(1000)
             num_commits += 1
-            add_delta_account_as_commit(act, self.repo, msg="creation of tokens")
+            add_delta_account_as_commit(act, self.repo)
+            print(f"created account {account}")
         print(ledger)
 
         can_ack_from: list[tuple[bytes, bytes]] = []
@@ -188,7 +196,10 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
                 can_ack_from.append((acker_id.encode(), giver_id.encode()))
             give_act = giver.give(amount, acker.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
-            commit_give = add_delta_account_as_commit(give_act, self.repo, msg=give_msg, deps=self.repo.show_ref(f"refs/heads/{acker.id.decode()}/last"))
+            deps = self.repo.show_ref(f"refs/heads/{author_to_filename(acker.id.decode())}/last")
+            if len(deps) == 0:
+                raise Exception(f"dependencies empty: tried to query ref {f"refs/heads/{author_to_filename(acker.id.decode())}/last"}")
+            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=deps)
             num_commits += 1
             validate_hash(commit_give, "commit_give")
             print(give_msg)
@@ -205,7 +216,7 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
 
             ack_act = ledger[new_acker].ack(amount_to_ack, new_giver)
             ack_msg = f"{(new_acker.decode())} acked {amount_to_ack} CHF from {(new_giver.decode())}"
-            commit_ack = add_delta_account_as_commit(ack_act, self.repo, msg=ack_msg, deps=self.repo.show_ref(f"refs/heads/{new_giver.decode()}/last"))
+            commit_ack = add_delta_account_as_commit(ack_act, self.repo, deps=self.repo.show_ref(f"refs/heads/{author_to_filename(new_giver.decode())}/last"))
             num_commits += 1
             validate_hash(commit_ack, "commit_ack")
             print(ack_msg)
@@ -219,6 +230,7 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
 class InvalidRepoGeneratorGoc(BaseRepoGenerator):
     def generate_impl(self):
         ledger: dict[bytes, Account] = dict()
+        assert isinstance(self.authors, list)
 
         for a in self.authors:
             ledger[a.encode()] = Account(a.encode())
@@ -260,23 +272,6 @@ class InvalidRepoGeneratorGoc(BaseRepoGenerator):
             print(f"{account!r}")
         return True
 
-def get_public_keys(keydir: Path, names):
-    ids: list[str] = []
-    run_cmd(f"mkdir -p {keydir}") # in case the key directory doesn't exist
-    for n in names:
-        run_cmd(f"ssh-keygen -f {keydir/n} -N \"\" -q -t ed25519 -C \"\"") # if the keys don't exist, create them
-        ids.append(run_cmd(f"ssh-keygen -f {keydir/n} -e | head -n 3 | tail -n 1").decode().strip())
-    return ids
-
-def configure_allowed_signers(repo_dir: Path, keydir: Path, author_names: list[str]):
-    allowed_signers_path = "allowed_signers.txt"
-    with open(repo_dir/allowed_signers_path, "w") as file:
-        lines = []
-        for a in author_names:
-            lines.append(a + "@gitgen.com namespace=\"git\" " + run_cmd(f"cat {keydir/a}.pub").decode().strip() + "\r\n")
-        file.writelines(lines)
-
-    run_cmd(f"git config gpg.ssh.allowedSignersFile {allowed_signers_path}", cwd=str(repo_dir))
 
 def main(db: Path, no_commits: int, no_users: int, seed: str, sign: bool, type: str):
     print(f"repository will be generated at {db.absolute()}")
