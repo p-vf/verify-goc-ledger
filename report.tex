@@ -32,12 +32,11 @@
 \begin{document}
 \maketitle
 %\newcommand{\todo}[1]{\emph{\colorbox{Yellow}{TODO #1}}}
-\newcommand{\balance}[0]{\textit{balance}}
+\newcommand{\balance}[0]{\textsc{Balance}}
 \newcommand{\apply}[0]{\textit{apply}}
 \newcommand{\acc}[0]{\textit{acc}}
 \newcommand{\msgId}[0]{\texttt{MsgId}}
 \newcommand{\deltacc}[1]{#1^\delta}
-\newcommand{\fields}[1]{#1_\textit{fields}}
 \newcommand{\var}[1]{\textsl{#1}}
 \newcommand{\msgType}[0]{\texttt{MsgType}}
 \newcommand{\forkproof}[0]{\var{forkProof}}
@@ -145,13 +144,13 @@ TODO
 
 \subsection{\(\delta\)-GOC-Ledger}
 
-The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how much tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors form the state of the ledger. More concretely, a ledger $L$ is a mapping from authors to their corresponding account.
+The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how many tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors of the state of the ledger. More concretely, a ledger $L$ is a mapping from authors to their corresponding account.
 
 In the case of the GOC-Ledger, this is realized by introducing 5 fields: $A_\emph{author}$ which is the author of this account, $A_\uparrow$ and $A_\downarrow$ which represent the number of created/destroyed tokens respectively, $A_\rightarrow$ and $A_\leftarrow$ which represent the number of given/received tokens respectively. $A_\uparrow$ and $A_\downarrow$ are simple grow-only counters whereas $A_\rightarrow$ and $A_\leftarrow$ are mappings from author names to grow-only counters, which represent the number of tokens $A_\emph{author}$ has given to or acknowledged from the other author respectively.
 
 For ease of writing, the notation $S_*$ is defined to be the domain of definition of a mapping $S$. E.g. if $L$ is a ledger, $L_*$ denotes the set of authors that have an account in this ledger. \todo{where should I put this definition?}
 
-To get the balance of an account, we can compute \[A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\].
+To get the balance of an account, we can compute \[\balance(A) \definedas A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\].
 Additionally there is a merge operation with which accounts can be merged. This merge function is only defined on accounts of the same author and returns the account that contains the maximal values of all the grow only counters in both of the accounts and adds all the grow-only counters that are only in one of the two accounts. \todo{write down the definition of this merge operation}
 
 Furthermore, there is also a merge operation on the ledger and a delta account. The ledger and a delta-account get merged by merging the account with the corresponding account in the ledger if the author is present and if not, adding the account to the ledger. \todo{define this more precisely if necessary?}
@@ -159,7 +158,7 @@ Furthermore, there is also a merge operation on the ledger and a delta account. 
 The merge operation between two objects is denoted $\sqcup$.
 
 \subsubsection{Delta Accounts}
-To store the state of the ledger more efficiently with regards to space, only the grow-only counters that have changed have to be stored. This is done via delta accounts. A delta account $A^\delta$ has the same fields as a normal account, just that the fields $A^\delta_\uparrow$ and $A^\delta_\downarrow$ can have a null value (denoted $\bot$) which represents a missing value. Such a null value is not needed for $A^\delta_\rightarrow$ and $A^\delta_\leftarrow$ because the empty set is a natural empty value. When merging delta accounts, one can use a slightly modified version of the merge operation on normal accounts, one just has to treat $\bot$ as a 0.
+To store the state of the ledger more efficiently with regards to space, only the grow-only counters that have changed have to be stored. This is done via delta accounts as proposed by Heisch \cite{delta-goc-ledger-heisch}. A delta account $A^\delta$ has the same fields as a normal account, just that the fields $A^\delta_\uparrow$ and $A^\delta_\downarrow$ can have a null value (denoted $\bot$) which represents a missing value. Such a null value is not needed for $A^\delta_\rightarrow$ and $A^\delta_\leftarrow$ because the empty set is a natural empty value. When merging delta accounts, one can use a slightly modified version of the merge operation on normal accounts, one just has to treat $\bot$ as a 0.
 
 
 \section{Design}
@@ -167,14 +166,20 @@ To store the state of the ledger more efficiently with regards to space, only th
 \subsection{Definitions}
 \todo{add description of the used notation here}
 \todo{introduce induced frontier}
-\todo{maybe define fields $(\cdot)_\emph{fields}$ of Accounts}
 
 $\textsc{CheckSignature}$ of message $M$ is the predicate that is true iff $M_\emph{signature}$ is a valid signature belonging to $M_\emph{author}$.
 
 A fork proof is a set of messages which all have the same previous message. We define fork proofs as a predicate $\forkproof$ over a set of messages $S$.
 \begin{multline*}
     \forkproof(S) \definedas \\
-    \hfill\bigwedge_{M, M' \in S} \left( M_\emph{prev} = M'_\emph{prev} \land M_\emph{author} = M'_\emph{author} \land \textsc{CheckSignature}(M) \right)
+    \hfill\bigwedge_{M, M' \in S} \left(
+        \begin{aligned}
+            &M_\emph{prev} = M'_\emph{prev}
+            \land M_\emph{author} = M'_\emph{author} \\
+            &\land \textsc{CheckSignature}(M)
+            \land \textsc{CheckSignature}(M')
+        \end{aligned}
+    \right)
 \end{multline*}
 
 The function \var{deps} of message $M$ is defined as the messages in its immediate dependencies.
@@ -190,7 +195,7 @@ A message $M$ in our design can have one of two types; either it has the type ac
 
 \subsection{Choices}
 \label{sec:choices}
-In our design we made some choices. To save space, we only keep track of the necessary dependencies in a message, meaning only the participants of a transaction are allowed to be in the dependencies of the corresponding message. A consequence of this is that if this is the only way to replicate messages, proof of byzantine behaviour can only be shared if a transaction with actual tokens is made. This prompted us to add a second message type, the \var{BYZ\_ACK} message (a normal transactio has message type \var{ACCOUNT}).
+In our design we made some choices. To save space, we only keep track of the necessary dependencies in a message, meaning only the participants of a transaction are allowed to be in the dependencies of the corresponding message. A consequence of this is that if this is the only way to replicate messages, proof of byzantine behaviour can only be shared if a transaction with actual tokens is made. This prompted us to add a second message type, the \var{BYZ\_ACK} message (a normal transaction has message type \var{ACCOUNT}).
 This message type is there to point out to other replicas that some of the participants behave badly, and to prevent colluders from being able to keep ignoring evidence of a fork.
 
 \subsection{Detecting Byzantine Behaviour}
@@ -201,13 +206,13 @@ The function \var{byz} of a set of messages $S$ is the set of authors exhibiting
     &a = M_\emph{author}\\
     &\land \textsc{CheckSignature}(M)\\
     &\land (\\
-    &\qquad \exists P \subseteq S : \forkproof(P) \land M \in P\\
+    &\qquad \exists M' \in S : \forkproof(\{M, M'\}) \\
     &\qquad \lor \lnot \var{wellFormed}(M)\\
     &\qquad \lor \lnot \var{valid}(M) \\
     &)\}
 \end{align*}
 
-Where $\var{wellFormed}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and $\var{valid}(M)$ is a predicate that is true if further invariants hold for the message specified in section \ref{sec:invariants}.
+Where $\var{wellFormed}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and $\var{valid}(M)$ is a predicate that is true if further invariants hold for the message specified in section \ref{sec:invariants}. It is important to note that our design of the predicate $\var{valid}$ does not follow the convention that messages from known byzantine actors are ignored as in the design of the Blocklace paper (see section \ref{sec:invariants-delta-a} for justification).
 
 \subsection{Invariants}
 \label{sec:invariants}
@@ -215,13 +220,15 @@ Where $\var{wellFormed}$ is a predicate that is true iff the message is syntacti
 \subsubsection{Invariants on message \(M\) and corresponding delta account}
 \label{sec:invariants-delta-a}
 The following invariants only apply, if $\msgType(M) = \var{ACCOUNT}$.
-Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was performed. More formally, this can be described as
+Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was performed. Formally, this can be described as
 \[
     L_\emph{before} = \bigsqcup_{M' \in H_\emph{acc}} \acc(M')
 \]
 where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT}\}$ is the set of all delta accounts in the strict causal history of $M$ and the neutral element of $\bigsqcup$ is the empty ledger. \todo{write this differently, possibly add this to definition section}
 
-Since we merge account states no matter if the corresponding authors exhibited byzantine behaviour, this means that double spending is not prevented/handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue.
+Since we merge account states no matter if the corresponding authors exhibited byzantine behaviour, this means that double spending is not prevented nor handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue but is outside the scope of this project.
+
+For this project, we assume that the predicate \var{valid} may depend on messages in the causal history from known equivocators to avoid negative balance in valid account messages. This is in contrast to the design described in the Blocklace paper, where the valid predicate may only depend on messages in the causal history from authors that don't exhibit byzantine behaviour. This means that if the balance of an account is negative, this can only have been caused by either a) the author overspending tokens or b) there being a fork in the causal history of the same account, where the double spending happened. In case a) the message is invalid and in case b) the message can also be viewed as invalid, because it is guaranteed to be created by a byzantine process, which means no message $M$ with $\msgType(M) = \var{ACCOUNT}$ should ever reference it anyway. So in either case, a negative balance invalidates a message.
 
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$, so $L_\emph{after} = L_\emph{before} \sqcup \deltacc{A}$. \todo{write $A_\emph{old}$ instead of $L_\emph{before}$ where appropriate}
 
@@ -261,11 +268,12 @@ We want the dependencies that are necessary to track the origins of a transactio
 This yields the following invariants.
 
 A message $M'$ is relevant to message $M$ if one of the following hold
-\begin{itemize}
+\begin{enumerate}
     % ASSUME_CAUSAL_STABILITY
-    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{author}$ \todo{I am not sure if this dependency is necessary.. }
+    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{author}$ \footnote{One thing to note is that this condition is not necessary to track transactions correctly, but it ensures that all the authors in $\acc(M)_{\rightarrow *}$ are identities that exist in the ledger. For this reason this condition is left in.}%\todo{I am not sure if this dependency is necessary.. }
     \item $\acc(M)_{\leftarrow *}$ contains $M'_\textit{author}$
-\end{itemize}
+\end{enumerate}
+
 Furthermore, we need to check that there is at least one dependency for each author mentioned in the acked/given fields (see $\delta7$).
 Additionally, the date of the message can be checked. This is not necessary for any safety properties of the system, but can still be useful for understanding messages (see $\delta8$).
 \begin{invariant}{$\delta6$}
@@ -609,7 +617,25 @@ Additionally, we need to check that referenced objects actually exist, but this 
 
 \subsection{Verification Algorithm}
 \label{sec:impl-verification-alg}
-To retrieve messages in a reverse topological order, we use the command \texttt{git log} with the flags \texttt{--reverse} and \texttt{--topo-order} and, using format placeholders, we retrieve the relevant fields. \todo{should I list the format placeholders?} The commits are cached in a dictionary.
+To retrieve messages in a reverse topological order, we use the command \texttt{git log} with the flags \texttt{--reverse} and \texttt{--topo-order} and, using format placeholders, we retrieve the relevant fields (see table \ref{tab:git-format-placeholders}). The commits are cached in a dictionary.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|p{8cm}|}
+        \hline
+        \textbf{Placeholder} & \textbf{Meaning} \\ \hline
+        \texttt{\%H} & Hash (identifier) of commit\\ \hline
+        \texttt{\%T} & Hash of tree object belonging to the commit\\ \hline
+        \texttt{\%P} & Concatenated hashes of parents of commit, separated with spaces\\ \hline
+        \texttt{\%an}, \texttt{\%cn} & Author/Committer name respectively\\ \hline
+        \texttt{\%ae}, \texttt{\%ce} & Author/Committer email respectively\\ \hline
+        \texttt{\%at}, \texttt{\%ct} & Author/Commiter date respectively\\ \hline
+        \texttt{\%G?} & Signature validity, replaced with ``G'',  good signature, ``U'' for signature with unknown validity. In our case ``U'' is sufficient, however this does not check if the author of the commit matches the creator of the signature.\\ \hline
+        \texttt{\%s} & Subject line of commit message, terminated by newline character.\\ \hline
+    \end{tabular}
+    \caption{Relevant format placeholders used with Git, in \texttt{--format} option.}
+    \label{tab:git-format-placeholders}
+\end{table}
 
 Now instead of always recreating the frontier from scratch, we implemented an optimization that uses cached frontiers to reuse part of the already computed data. This is done by storing the last frontier computed for each author and when trying to compute the frontier of a new message, checking if one of the immediate dependencies is in the frontier cache. If this is the case, we only have to traverse up to the last commits in this frontier and replay only the messages between the new message and the chached frontier. If \texttt{<f1>}, ..., \texttt{<fn>} represent the commit ids in the cached frontier, and \texttt{<new-msg>} represents the newly added commit message, we can compute the new frontier by traversing the commit messages with the git-cli command \texttt{git rev-list --reverse --topo-order <new-msg> \^<f1> ... \^<fn>} and applying the changes to the cached frontier.
 The impact of this optimization can be seen in the result section \todo{add this in the evaluation section}
@@ -661,8 +687,8 @@ To get a baseline performance and storage measurement, we created a benchmark th
 
 \subsubsection{Performance benchmark}
 We generate repositories with the number of messages varying from 300 to 900 with a step size of 300.
-To measure the runtime of different parts of the code, we use the \verb|perf_counter| function from the \verb|time| module in the standard library of python \cite{pythonPerfCounterNs}. To make sure these timing calls don't skew the performance measurements significantly, the same benchmarks were run without the timing calls and the resulting total runtime was still within ??? of the total runtime calculated by the granular timing calls. \todo{do this once the benchmarks are fixed}
-We split the code into various non-overlapping sections that are timed and grouped more or less arbitrarily.
+To measure the runtime of different parts of the code, we use the \verb|perf_counter| function from the \verb|time| module in the standard library of python \cite{pythonPerfCounterNs}.
+We split the code into various non-overlapping sections. Each section should either contain invariant checks directly or performance critical code.
 
 \subsubsection{Storage Bench: Comparison of storage methods}
 We take the simulation described in section \ref{sec:base-repo} and use it to create repositories with the same encoded transactions and the number of messages being 1000. The only difference between them is how the messages are stored and how many dependencies each message has.
@@ -703,7 +729,7 @@ The results of the performance benchmark done on the baseline repository are sho
 We see that the total running time (top of the bars) increases roughly linearly in the number of commits, however if we only take a look at the ``recreate frontier'' part, we can see that this part increases significantly more than linearly.
 
 \paragraph{Discussion}
-The reason ``recreate frontier'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the frontier, which happens in each commit. Although we try to limit the number of commits that are traversed (see section \ref{sec:impl-verification-alg}), there is still seems to be an inherent performance overhead with calling subprocess from python. The reason it scales quadratically is because the number of commits that maybe have to be traversed to recreate the frontier only increases during the runtime of the algorithm. If we get unlucky, we even have to traverse all of the in the causal history of the commit we are looking at (if none of the parents in the cache are parents of the commit).
+The reason ``recreate frontier'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the frontier, which happens in each commit. Although we try to limit the number of commits that are traversed (see section \ref{sec:impl-verification-alg}), there is still seems to be an inherent performance overhead with calling subprocess from python. The reason it scales quadratically is because the number of commits that maybe have to be traversed to recreate the frontier only increases during the runtime of the algorithm. If we get unlucky, we even have to traverse all of the commits in the causal history of the commit we are looking at (if none of the parents in the cache are parents of the commit).
 
 \subsubsection{Storage Bench}
 When measuring the size of the generated git repositories, we get the result shown in table \ref{tab:storage-res}. We see that our approach uses about 29\% of the space that Method 1 with unnecessary dependencies uses (proposed in \cite{delta-goc-ledger-heisch}) when looking at the effective space used on the disk and 37\% when looking at the apparent size of files.
