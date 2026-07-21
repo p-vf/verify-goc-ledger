@@ -75,9 +75,9 @@ class GitCliGocVerifier:
 
         #self._forks = self.extract_forks()
 
-        self.perf_statistics.start_timer("Commit retrieval")
+        self.perf_statistics.start_timer("commit retrieval")
         commits = self.repo.retrieve_all_commits_reverse_topo_order()
-        self.perf_statistics.end_timer("Commit retrieval")
+        self.perf_statistics.end_timer("commit retrieval")
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue

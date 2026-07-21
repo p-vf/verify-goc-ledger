@@ -24,6 +24,9 @@ class BaseRepoGenerator(abc.ABC):
         self.repo = Repo(str(self._repo_dir), self.keydir.absolute() if self._sign else None)
         self.authors = None
         self.kwargs = kwargs
+        self.store_acc_as_tree = self.kwargs.get("acc_as_tree_storage", False)
+        self.store_unnecessary_deps = self.kwargs.get("unnecessary_deps", False)
+        print(f"store acc as tree: {self.store_acc_as_tree}")
         self.authorkeys = None
 
     @abc.abstractmethod
@@ -47,107 +50,6 @@ class BaseRepoGenerator(abc.ABC):
             print("created or read authors:")
             print("authors:", self.authorkeys, "\ncorresponding names:", self.authors)
         return self.generate_impl()
-
-class ValidRepoGeneratorV1(BaseRepoGenerator):
-    def generate_impl(self) -> bool:
-        ledger: dict[bytes, Account] = dict()
-        assert isinstance(self.authors, list)
-
-        for a in self.authors:
-            ledger[a.encode()] = Account(a.encode())
-
-        num_commits = 0
-        for account in ledger.values():
-            act = account.create(1000)
-            num_commits += 1
-            add_delta_account_as_commit(act, self.repo, msg="creation of tokens")
-
-        while num_commits < self._num_commits:
-            l = list(ledger.values())
-            giver = random.choice(l)
-            l.remove(giver)
-            acker = random.choice(l)
-            amount = int(random.random() * giver.balance() * 0.2)
-            if amount == 0:
-                continue
-            give_act = giver.give(amount, acker.id)
-            ack_act = acker.ack(amount, giver.id)
-            give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
-            ack_msg = f"{(acker.id.decode())} acked {amount} CHF from {(giver.id.decode())}, has acked {acker.acked[giver.id]} CHF"
-            num_commits += 1
-            commit_give = add_delta_account_as_commit(give_act, self.repo, msg=give_msg, deps=self.repo.show_ref(f"refs/heads/{acker.id.decode()}/last"))
-            validate_hash(commit_give, "commit_give")
-            print(give_msg)
-            if num_commits >= self._num_commits:
-                break
-            num_commits += 1
-            commit_ack = add_delta_account_as_commit(ack_act, self.repo, msg=ack_msg, deps=self.repo.show_ref(f"refs/heads/{giver.id.decode()}/last"))
-            validate_hash(commit_ack, "commit_ack")
-            print(ack_msg)
-
-        run_cmd("git update-ref HEAD $(git log --format=%H -n 1 --all)", str(self._repo_dir))
-
-        for account in ledger.values():
-            print(f"{account!r}")
-        return True
-
-class ValidRepoGeneratorPareto(BaseRepoGenerator):
-    """Has an additional parameter `k: int` which determines the
-    distribution of transactions per person."""
-    def generate_impl(self) -> bool:
-        if "k" in self.kwargs:
-            k = self.kwargs["k"]
-        else:
-            k = 2
-        assert k > 0, "parameter k must be > 0"
-        assert isinstance(self.authors, list)
-
-        ledger: dict[bytes, Account] = dict()
-
-        for a in self.authors:
-            ledger[a.encode()] = Account(a.encode())
-
-        p = ParetoSampler(k, self.authors)
-
-        num_commits = 0
-        for account in ledger.values():
-            act = account.create(1000)
-            num_commits += 1
-            add_delta_account_as_commit(act, self.repo, msg="creation of tokens")
-
-        counts = {author: 0 for author in self.authors}
-        for _ in range(10000):
-            a, _ = p.sample_pair()
-            counts[a] += 1
-        print(counts)
-
-        while num_commits < self._num_commits:
-            giver_id, acker_id = p.sample_pair()
-            giver = ledger[giver_id.encode()]
-            acker = ledger[acker_id.encode()]
-            amount = int(random.random() * giver.balance() * 0.2)
-            if amount == 0:
-                continue
-            give_act = giver.give(amount, acker.id)
-            ack_act = acker.ack(amount, giver.id)
-            give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
-            ack_msg = f"{(acker.id.decode())} acked {amount} CHF from {(giver.id.decode())}, has acked {acker.acked[giver.id]} CHF"
-            num_commits += 1
-            commit_give = add_delta_account_as_commit(give_act, self.repo, msg=give_msg, deps=self.repo.show_ref(f"refs/heads/{acker.id.decode()}/last"))
-            validate_hash(commit_give, "commit_give")
-            print(give_msg)
-            if num_commits >= self._num_commits:
-                break
-            num_commits += 1
-            commit_ack = add_delta_account_as_commit(ack_act, self.repo, msg=ack_msg, deps=self.repo.show_ref(f"refs/heads/{giver.id.decode()}/last"))
-            validate_hash(commit_ack, "commit_ack")
-            print(ack_msg)
-
-        run_cmd("git update-ref HEAD $(git log --format=%H -n 1 --all)", str(self._repo_dir))
-
-        for account in ledger.values():
-            print(f"{account!r}")
-        return True
 
 class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
     """Has an additional parameter `k: int` which determines the
@@ -178,7 +80,7 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
         for account in ledger.values():
             act = account.create(1000)
             num_commits += 1
-            add_delta_account_as_commit(act, self.repo)
+            add_delta_account_as_commit(act, self.repo, acc_as_tree=self.store_acc_as_tree, deps=None)
             print(f"created account {account}")
         print(ledger)
 
@@ -199,7 +101,9 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
             deps = self.repo.show_ref(f"refs/heads/{author_to_filename(acker.id.decode())}/last")
             if len(deps) == 0:
                 raise Exception(f"dependencies empty: tried to query ref {f"refs/heads/{author_to_filename(acker.id.decode())}/last"}")
-            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=deps)
+            if self.store_unnecessary_deps == True:
+                deps = None
+            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=deps, acc_as_tree=self.store_acc_as_tree)
             num_commits += 1
             validate_hash(commit_give, "commit_give")
             print(give_msg)
@@ -216,7 +120,9 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
 
             ack_act = ledger[new_acker].ack(amount_to_ack, new_giver)
             ack_msg = f"{(new_acker.decode())} acked {amount_to_ack} CHF from {(new_giver.decode())}"
-            commit_ack = add_delta_account_as_commit(ack_act, self.repo, deps=self.repo.show_ref(f"refs/heads/{author_to_filename(new_giver.decode())}/last"))
+            if self.store_unnecessary_deps == True:
+                deps = None
+            commit_ack = add_delta_account_as_commit(ack_act, self.repo, deps=self.repo.show_ref(f"refs/heads/{author_to_filename(new_giver.decode())}/last"), acc_as_tree=self.store_acc_as_tree)
             num_commits += 1
             validate_hash(commit_ack, "commit_ack")
             print(ack_msg)
@@ -276,12 +182,8 @@ class InvalidRepoGeneratorGoc(BaseRepoGenerator):
 def main(db: Path, no_commits: int, no_users: int, seed: str, sign: bool, type: str):
     print(f"repository will be generated at {db.absolute()}")
     match type:
-        case "valid_v1":
-            generator = ValidRepoGeneratorV1(db, no_commits, no_users, seed, sign)
         case "invalid_goc_given":
             generator = InvalidRepoGeneratorGoc(db, no_commits, no_users, seed, sign)
-        case "valid_pareto":
-            generator = ValidRepoGeneratorPareto(db, no_commits, no_users, seed, sign, k=2)
         case "valid_pareto_ack_delay":
             generator = ValidRepoGeneratorParetoAckDelayed(db, no_commits, no_users, seed, sign, k=2)
         case _:

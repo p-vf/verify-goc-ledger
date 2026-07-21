@@ -216,7 +216,7 @@ class Repo:
 
 date = 1774010000
 
-def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None):
+def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[str]|None=None, acc_as_tree=False):
     """deps is a list of commit hashes that represents the commits this commit has as parents. It must not contain the last commit of the same author."""
     global date
 
@@ -248,11 +248,11 @@ def add_delta_account_as_commit(acc: Account, repo: Repo, msg=" ", deps: list[st
             raise Exception("previous commit in pars")
         parents = previous + deps
     date += 1
-    return add_delta_account_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given)
+    return add_delta_account_as_commit_plumbing(repo, parents, acc.id.decode(), date, msg, created, destroyed, acked, given, acc_as_tree=acc_as_tree)
 
 ref_fmt_last = "refs/heads/%s/last"
 
-def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict[bytes, int] | None = None, given: dict[bytes, int] | None = None):
+def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: str, date: int = 1774010000, msg: str = " ", created: int | None = None, destroyed: int | None = None, acked: dict[bytes, int] | None = None, given: dict[bytes, int] | None = None, acc_as_tree=False):
     """deps must be the full list of dependencies. If the user intends to create a valid commit, the first element of this list must be from the same author as specified in parameter `author`."""
     tree_data: dict[str, int | dict[str, int]] = {}
     if created is not None:
@@ -274,7 +274,15 @@ def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: st
             tree_acked[account_id.decode()] = num
         tree_data["a"] = tree_acked
 
-    commit_hash = repo.create_commit(empty_tree, deps, author, date, json.dumps(tree_data)).decode()
+    if acc_as_tree:
+        print(tree_data)
+        tree_dict: TreeDict = {k:(int_to_bytes(v) if isinstance(v, int) else {author_to_filename(kp):int_to_bytes(vp) for kp, vp in v.items()}) for k, v in tree_data.items()}
+        tree = repo.create_tree(tree_dict, "account")
+        commit_hash = repo.create_commit(tree, deps, author, date, " ").decode()
+        print(f"created tree {tree}")
+    else:
+        commit_hash = repo.create_commit(empty_tree, deps, author, date, json.dumps(tree_data)).decode()
+
     repo.update_ref(ref_fmt_last % author_to_filename(author), commit_hash)
     return commit_hash
 
