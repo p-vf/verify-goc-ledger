@@ -261,29 +261,25 @@ The invariant $\delta3$ ensures that all the tokens that were acknowledged, wher
 \end{invariant}
 Invariant $\delta4$ ensures that only replicas that are permitted can create tokens. For the purposes of this report, we define the set $\var{Creators}$ which contains all the authors that are allowed to create tokens.
 \begin{invariant}{$\delta4$}
-    (valid creator) If $\deltacc A_\uparrow \neq \bot$, $A \in \var{Creators}$.
+    (valid creator) If $\deltacc A_\uparrow \neq \bot$, $\deltacc A_\emph{author} \in \var{Creators}$.
 \end{invariant}
 
-We want the dependencies that are necessary to track the origins of a transaction. However, we don't want unnecessarily many dependencies, for example if $\acc(M)$ is a transaction between two authors \var{A} and \var{B}, we only want messages in the immediate dependencies $M_\emph{deps}$ that were created by \var{A} or \var{B}, and we want to ensure that there is a message in the immediate dependencies for each of those authors.
-This yields the following invariants.
+We want the dependencies that are necessary to track the origins of a transaction. However, we don't want unnecessarily many dependencies. For example if $\acc(M)$ is a transaction between authors \var{A}, \var{B} and \var{C}, where \var{A} is the creator of the message, we want exactly one message in the immediate dependencies $M_\emph{deps}$ created by author \var{B} and exactly one created by \var{C}.
 
-A message $M'$ is relevant to message $M$ if one of the following hold
-\begin{enumerate}
-    % ASSUME_CAUSAL_STABILITY
-    \item $\acc(M)_{\rightarrow *}$ contains $M'_\textit{author}$ \footnote{One thing to note is that this condition is not necessary to track transactions correctly, but it ensures that all the authors in $\acc(M)_{\rightarrow *}$ are identities that exist in the ledger. For this reason this condition is left in.}%\todo{I am not sure if this dependency is necessary.. }
-    \item $\acc(M)_{\leftarrow *}$ contains $M'_\textit{author}$
-\end{enumerate}
-
-Furthermore, we need to check that there is at least one dependency for each author mentioned in the acked/given fields (see $\delta7$).
-Additionally, the date of the message can be checked. This is not necessary for any safety properties of the system, but can still be useful for understanding messages (see $\delta8$).
+A message $M'$ is relevant to message $M$ iff message $M$ acknowledges tokens from $M_\emph{author}$.
 \begin{invariant}{$\delta6$}
-    (relevant dependencies): all the dependencies of $M$ are relevant, i.e. for all $\var{msgId} \in M_\emph{deps}$ it holds that there exists $M'$ with $\msgId(M') = \var{msgId}$ and $M'$ is a relevant to $M$.
+    (relevant dependencies): all the dependencies of $M$ are relevant, i.e. for all $M' \in \var{deps}(M)$ it holds that $M'_\textit{author} \in \acc(M)_{\leftarrow *}$.
 \end{invariant}
+One thing to note here is that only the authors in the field $\acc(M)_{\leftarrow *}$ get checked. If there is an author in $\acc(M)_{\rightarrow *}$ that doesn't exist or has exhibited byzantine behaviour, this is semantically the same as if the tokens given to that non-existent author were destroyed (meaning $\acc(M)_\downarrow$ being increased by this amount) and is always allowed.
+
+Furthermore, we need to check that there is exactly one dependency for each author mentioned in the acked field. That there is at most one dependency per author is covered by the invariant $M4$.
 \begin{invariant}{$\delta7$}
-    (necessary dependencies): for any author $a \in \acc(M)_{\rightarrow *} \cup \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{id} = a$ and $\msgId(M') \in M_\textit{deps}$
+    (necessary dependencies): for any author $a \in \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{author} = a$ and $\msgId(M') \in M_\textit{deps}$
 \end{invariant}
+
+Additionally, the date of the message can be checked. This is not necessary for any safety properties of the system, but allows sorting messages of one author by date instead of topologically.
 \begin{invariant}{$\delta8$}
-    (non-decreasing dates): $(M_\textit{prev})_\textit{date} \leq M_\textit{date}$ must hold
+    (non-decreasing dates): if $(\var{prev}(M))_\textit{date} \ne \bot$, $(\var{prev}(M))_\textit{date} \leq M_\textit{date}$ must hold
 \end{invariant}
 
 \subsubsection{Invariants on Message \(M\) inherited from 2P-BFT-Log}
@@ -294,7 +290,7 @@ Additionally, the date of the message can be checked. This is not necessary for 
     \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, there exists at most one $\textit{\var{msgId}} \in M_\textit{deps}$, such that $\texttt{MsgId}(M') = \var{msgId}$ and $M'_\textit{author} = \textit{author}$.
     \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$.
     \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
-    \item [M7] \emph{(monotonic dependencies)}: if $M \stackrel{log}{\rightsquigarrow} M'$ then for all $(\var{msgId}, \var{msgId}') \in M_\textit{deps} \times M'_\textit{deps} : \var{msgId} = \msgId(D) \land \var{msgId}' = \msgId(D') \land D_\textit{author} = D'_\textit{author} \Rightarrow D \le_\mathcal M D'$. \footnote{This invariant isn't necessary for safety and liveness properties, but we check it nonetheless}
+    \item [M7] \emph{(monotonic dependencies)}: if $M \stackrel{log}{\rightsquigarrow} M'$ then for all $(D, D') \in \var{deps}(M) \times \var{deps}(M')$ with $D_\textit{author} = D'_\textit{author}$, $D \le_\mathcal M D'$ holds.
 \end{enumerate}
 % Validity properties if log $L$ is in growing phase:
 % \begin{enumerate}
@@ -314,25 +310,24 @@ Additionally, the date of the message can be checked. This is not necessary for 
 % \end{enumerate}
 
 \subsubsection{Invariants related to Byzantine Behaviour}
-We want to ensure that authors don't make any transactions with an author that has created messages that exhibit byzantine behaviour. To enforce this, the following invariant for message $M$ has to be checked: if there is a fork proof $\{M', M''\}$ (meaning $M'$, $M''$ are valid, from the same author $author$ and $M'_\emph{prev} = M''_\emph{prev}$) in the messages that are known to $M_\emph{author}$ at the time of creating $M$ (denoted $K(M)$), $M_\emph{deps}$ must not contain a message created by the author which created the fork, even if it references a message before the fork (see invariant $F1$).
-The set of messages known to $M$, $K(M)$ is defined as all the messages reachable from the dependencies $M_\emph{deps}$ and $M_\emph{prev}$, or more formally the set $K(M) = \{M' \mid M' \rightsquigarrow M\}$. If $S$ is a set of messages, $K(S)$ is defined as the set of messages reachable from any of the messages in $S$, i.e. $K(S) := \bigcup_{M \in S} K(M) \cup S$.
-
-We also want to ensure that participants don't make transactions with users that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in set of messages known to a message, all its immediate dependencies must know about this (see invariant $F2$). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
-
-To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant $F3$).
-
+We want to ensure that authors don't make any transactions with an author that has created messages that exhibit byzantine behaviour. To enforce this, we check that any author that is part of the transaction must not exhibit byzantine behaviour in the set of messages known to author at the time (denoted $\mathcal H_\leq(M)$). This invariant is only enforced on messages of type \var{ACCOUNT}.
 \begin{invariant}{$F1$}
     \emph{(No transactions after byzantine message)}:\\
     If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any author $a \in \var{byz}(\mathcal H_<(M))$, there must be no message $M' \in \var{deps}(M)$ with $M'_\emph{author} = a$.
 \end{invariant}
+
+We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant $F2$). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
 \begin{invariant}{$F2$}
     \emph{(acknowledgement before transaction)}:\\
     If $\msgType(M) = \var{ACCOUNT}$ then the following must hold for any message $M' \in \var{deps}(M)$:
-    $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_<(M'))$$.
+    $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$.
 \end{invariant}
+
+To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages corresponding to immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant $F3$).
+
 \begin{invariant}{$F3$}
     \emph{(necessary dependencies of acknowledgement)}:\\
-    If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $$\var{byz}(\mathcal H_\le(\var{deps}(M) \setminus \{M'\})) \subset \var{byz}(\mathcal H_<(M))$$ must hold.
+    If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $$\var{byz}(\mathcal H_<(M) \setminus \{M'\}) \subset \var{byz}(\mathcal H_<(M))$$ must hold.
 \end{invariant}
 
 \subsection{Syntax of Messages}
@@ -343,7 +338,6 @@ TODO
 \subsection{Algorithm for Verification}
 To verify messages, the messages are visited in an arbitrary topological order according to the relation $\le_\mathcal{M}$, meaning if $M \rightsquigarrow M'$, $M$ must be visited before $M'$. Each message gets checked for the invariants and if it is valid, it is added to the set of valid message ids $F_\emph{valid}$. \footnote{If memory is a concern, the immediate predecessors of $M$ can be removed from $F_\emph{valid}$ and the check if a message $M'$ has been validated before becomes is there a $\var{msgId} \in F_\emph{valid}$ with $M'  \le_\mathcal{M} C_\emph{msg}[\var{msgId}]$. This makes $F_\emph{valid}$ a sort of frontier of valid messages.}
 
-\todo{define VerifySignature, Balance, RecreateFrontier}
 \begin{algorithm}
 \caption{Basic structure of the verifying algorithm}
 \begin{algorithmic}[1]
@@ -389,7 +383,7 @@ $M1$ & $M_\emph{prev} \ne \bot \wedge M_\emph{prev} \notin F_\emph{valid}$\\
 $M2$ & $M_\emph{prev} \neq \bot \wedge (C_\emph{msg}[M_\emph{prev}])_\emph{author} \ne M_\emph{author}$\\
 $M3$ & $M_\emph{deps} \not\subseteq F_\emph{valid}$\\
 $M4$ & see Algorithm \ref{alg:m4}\\
-$M5$ & $\lnot\Call{VerifySignature}{M}$\\
+$M5$ & $\lnot\Call{CheckSignature}{M}$\\
 $M6$ & no check necessary \\
 $M7$, $F1$ & see Algorithm \ref{alg:m7f1} \\
 \hline
@@ -418,7 +412,6 @@ $M7$, $F1$ & see Algorithm \ref{alg:m7f1} \\
 \end{algorithmic}
 \end{algorithm}
 The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks if an author occurs more than once (see line~\ref{alg:m4:check1}) and if the author of the message occurs in its own dependencies (see line~\ref{alg:m4:check2}). If either of these conditions is true, the message is invalid.
-\todo{The check on line~\ref{alg:m4:check2} is not mentioned in $M4$, but I think it makes sense}
 
 \begin{algorithm}
 \caption{Code snippet verifying $M7$ and $F1$}
@@ -492,7 +485,7 @@ $\delta8$ & $(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$\\
 \begin{algorithmic}
     \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in Algorithm~\ref{alg:m4})
     \Statex \ldots \vphantom{I}
-    \State \var{RelevantAuthors} $\gets \deltacc{A}_{\rightarrow*} \cup \deltacc{A}_{\leftarrow*}$
+    \State \var{RelevantAuthors} $\gets \deltacc{A}_{\leftarrow*}$
     % ASSUME_CAUSAL_STABILITY
     \ForAll{$a \in \var{Authors}$} \Comment $\delta6$
         \If{$a \not\in$ \var{RelevantAuthors}}
@@ -637,7 +630,7 @@ To retrieve messages in a reverse topological order, we use the command \texttt{
     \label{tab:git-format-placeholders}
 \end{table}
 
-Now instead of always recreating the frontier from scratch, we implemented an optimization that uses cached frontiers to reuse part of the already computed data. This is done by storing the last frontier computed for each author and when trying to compute the frontier of a new message, checking if one of the immediate dependencies is in the frontier cache. If this is the case, we only have to traverse up to the last commits in this frontier and replay only the messages between the new message and the chached frontier. If \texttt{<f1>}, ..., \texttt{<fn>} represent the commit ids in the cached frontier, and \texttt{<new-msg>} represents the newly added commit message, we can compute the new frontier by traversing the commit messages with the git-cli command \texttt{git rev-list --reverse --topo-order <new-msg> \^<f1> ... \^<fn>} and applying the changes to the cached frontier.
+Now instead of always recreating the frontier from scratch, we implemented an optimization that uses cached frontiers to reuse part of the already computed data. This is done by storing the last frontier computed for each author and when trying to compute the frontier of a new message, checking if one of the immediate dependencies is in the frontier cache. If this is the case, we only have to traverse up to the last commits in this frontier and replay only the messages between the new message and the chached frontier. If \texttt{<f1>}, ..., \texttt{<fn>} represent the commit ids in the cached frontier, and \texttt{<new-msg>} represents the newly added commit message, we can compute the new frontier by traversing the commit messages with the git-cli command \texttt{git rev-list --reverse --topo-order <new-msg> \^{}<f1> ... \^{}<fn>} and applying the changes to the cached frontier.
 The impact of this optimization can be seen in the result section \todo{add this in the evaluation section}
 
 % \subsection{Proposal of Extension to 2P-BFT-Log}
@@ -729,7 +722,7 @@ The results of the performance benchmark done on the baseline repository are sho
 We see that the total running time (top of the bars) increases roughly linearly in the number of commits, however if we only take a look at the ``recreate frontier'' part, we can see that this part increases significantly more than linearly.
 
 \paragraph{Discussion}
-The reason ``recreate frontier'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the frontier, which happens in each commit. Although we try to limit the number of commits that are traversed (see section \ref{sec:impl-verification-alg}), there is still seems to be an inherent performance overhead with calling subprocess from python. The reason it scales quadratically is because the number of commits that maybe have to be traversed to recreate the frontier only increases during the runtime of the algorithm. If we get unlucky, we even have to traverse all of the commits in the causal history of the commit we are looking at (if none of the parents in the cache are parents of the commit).
+The reason ``recreate frontier'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the frontier, which happens in each commit. Although we try to limit the number of commits that are traversed (see section \ref{sec:impl-verification-alg}), there is still seems to be an inherent performance overhead with calling subprocess from python. The reason it scales quadratically is because the number of commits that maybe have to be traversed to recreate the frontier only increases during the runtime of the algorithm. If we get unlucky, we even have to traverse all of the commits in the causal history of the commit we are looking at (if none of the commits in the frontier cache are parents of the commit).
 
 \subsubsection{Storage Bench}
 When measuring the size of the generated git repositories, we get the result shown in table \ref{tab:storage-res}. We see that our approach uses about 29\% of the space that Method 1 with unnecessary dependencies uses (proposed in \cite{delta-goc-ledger-heisch}) when looking at the effective space used on the disk and 37\% when looking at the apparent size of files.
@@ -748,9 +741,9 @@ We also see that the difference in effective space used doesn't change meaningfu
     \label{tab:storage-res}
 \end{table}
 \paragraph{Discussion}
-The difference in storage space between Method 1 and Method 2 can be attributed to our method not having to save so many additional objects and their references. Deduplication of GOCs is ineffective, because for each GOC we also have to store the blob identifier, which is a sha256 hash meaning that it takes up 32 bytes of space. Once the numbers stored in the blobs would get large enough for this to be worth it, collisions of such GOCs is so unlikely that practically no deduplication would happen.
+The difference in storage space between Method 1 and Method 2 can be attributed to our method not having to save so many additional objects and their references. Deduplication of GOCs is ineffective, because for each GOC we also have to store the blob identifier, which is a sha256 hash meaning that it takes up 32 bytes of space. Once the numbers stored in the blobs would get large enough for this to be worth it, collisions of such GOCs are so unlikely that practically no deduplication would happen.
 
-The lack of a difference between effective space used when storing unnecessary dependencies can be attributed to the operating system reserving additional space for small files on the disk. Since many of our files are quite small, this results in space being available for storing the unnecessary dependencies without increasing the effective space used. We think that this would change in a real system where there would be a lot more than 10 participants involved, i.e. the size saved when only storing the necessary dependencies would be considerable.
+The lack of a difference between effective space used when storing unnecessary dependencies can be attributed to the operating system reserving additional space for small files on the disk. Since many of our files are quite small, this results in space being available for storing the unnecessary dependencies without increasing the effective space used. We think that this changes in a real system where there would be a lot more than 10 participants involved, i.e. the size saved when only storing the necessary dependencies would be considerable.
 
 \section{Related Work}
 The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken directly from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the Paper of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we partly specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
