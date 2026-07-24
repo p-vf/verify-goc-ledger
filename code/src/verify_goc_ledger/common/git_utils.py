@@ -181,7 +181,9 @@ class Repo:
         return run_cmd(f"git for-each-ref '--format=%(refname)' {refspec}", self.git_path).splitlines()
 
     def retrieve_ref_commits(self, refspec):
-        return run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
+        res = run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
+        print(f"retreived commits from refspec {refspec}:\n{res}")
+        return res
 
     def is_reachable(self, commit: str, from_commits: Iterable[str]):
         from_commits_set = set(from_commits)
@@ -286,16 +288,16 @@ def add_delta_account_as_commit_plumbing(repo: Repo, deps: list[str], author: st
     repo.update_ref(ref_fmt_last % author_to_filename(author), commit_hash)
     return commit_hash
 
-fork_proof_author_name = "FORK_PROOF"
-fork_ack_msg = "FORK_ACK"
-def add_fork_proof(repo: Repo, forked_commits: list[str], date: int):
-    return repo.create_commit(empty_tree, forked_commits, fork_proof_author_name, date, sign=False).decode()
+# fork_proof_author_name = "FORK_PROOF"
+# def add_fork_proof(repo: Repo, forked_commits: list[str], date: int):
+#     return repo.create_commit(empty_tree, forked_commits, fork_proof_author_name, date, sign=False).decode()
 
-def add_fork_ack(repo: Repo, author: str, fork_proof_ids: list[str], date: int):
+def add_byz_ack(repo: Repo, author: str, byz_proof_ids: list[str], date: int):
     previous = repo.show_ref(ref_fmt_last % author)
-    return add_fork_ack_plumbing(repo, author, previous + fork_proof_ids, date)
+    return add_byz_ack_plumbing(repo, author, previous + byz_proof_ids, date)
 
-def add_fork_ack_plumbing(repo: Repo, author: str, parents: list[str], date: int):
-    commit_hash = repo.create_commit(empty_tree, parents, author, date, fork_ack_msg).decode()
+byz_ack_msg = ""
+def add_byz_ack_plumbing(repo: Repo, author: str, parents: list[str], date: int):
+    commit_hash = repo.create_commit(empty_tree, parents, author, date, byz_ack_msg + " ").decode()
     repo.update_ref(ref_fmt_last % author_to_filename(author), commit_hash)
     return commit_hash

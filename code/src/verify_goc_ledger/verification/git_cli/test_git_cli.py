@@ -15,7 +15,7 @@ import pprint
 
 from pathlib import Path
 
-from common.git_utils import Repo, TreeDict, fork_proof_author_name, fork_ack_msg
+from common.git_utils import Repo, TreeDict, byz_ack_msg
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
@@ -51,6 +51,14 @@ def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
     body = fields[10]
     return Commit(id, tree, parents, author_name, author_email, author_date, signature_status, body), None
 
+class Summary:
+    def __init__(self, author: bytes):
+        self.frontier: dict[bytes, set[bytes]] = dict()
+        self.byzantine: set[bytes] = set()
+        self.byz_acked: set[bytes] = set()
+        self.account: Account = Account(author)
+        self.recieved: dict[bytes, int] = dict()
+
 class GitCliGocVerifier:
     def __init__(self, git_path: str, enable_perf_stats: bool):
         self.repo = Repo(git_path, commit_format=commit_format)
@@ -61,7 +69,9 @@ class GitCliGocVerifier:
         self._account_cache: dict[bytes, tuple[Account, bool]] = {}
         self.account_cache_hits = 0
         self.current_frontiers: dict[bytes, dict[bytes, Log]] = {}
-        self.valid_commit_frontier: set[Commit] = set()
+        self.valid_commits: set[bytes] = set()
+        self.invalid_commits: set[bytes] = set()
+        self.valid_commit_frontier: dict[bytes, bytes] = dict()
 
         self.perf_statistics = PerfStatistics(enable_perf_stats)
 
@@ -78,110 +88,186 @@ class GitCliGocVerifier:
         self.perf_statistics.start_timer("commit retrieval")
         commits = self.repo.retrieve_all_commits_reverse_topo_order()
         self.perf_statistics.end_timer("commit retrieval")
+        frontier_set: set[bytes] = set()
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue
             commit, err = parse_commit(c)
             commit_id = c.split(b":", 1)[0]
+            frontier_set.add(commit_id)
             if err or commit is None:
                 print(f"failed to deserialize commit {commit_id.decode()}: {err}")
                 continue
+            frontier_set.difference_update(commit.parents)
             self._commit_cache[commit_id] = commit
-            msg_type = self.get_msg_type(commit)
-            match msg_type:
-                case MessageType.BYZ_ACK:
-                    err = self.verify_fork_ack_commit(commit)
-                    if err:
-                        print(f"failed checks on byzantine ack {commit}: {err}")
-                        continue
-                    acknowledged_forks = set(map(lambda p: self.get_commit(self.get_commit(p).parents[0]), commit.parents[1:]))
-                    frontier = self.recreate_frontier(commit.parents)
-                    for forked_commit in acknowledged_forks:
-                        log = frontier[forked_commit.author_name]
-                        if forked_commit == log.last_non_forked:
-                            log.acked_last_non_forked = True
-                    self.update_frontier(None, frontier, commit)
-                    self.current_frontiers[commit.author_name] = frontier
-                    self.update_valid_frontier(commit)
-                case MessageType.DELTA_ACC:
-                    # TODO check signature
-                    delta_acc, err = self.get_delta_acc(commit)
-                    if err:
-                        print(f"failed checks on commit {commit} while parsing delta account: {err}")
-                        continue
-                    assert delta_acc is not None
-                    frontier = self.recreate_frontier(commit.parents)
-                    err = []
-                    for log in frontier.values():
-                        if not log.acked_last_non_forked:
-                            err.append(f"author {commit.author_name} didn't ack forked commit {log.last_non_forked}")
-                    if err:
-                        print(f"failed checks on commit {commit}: {err}")
-                        continue
-                    err = self.verify_delta_acc(delta_acc, commit, frontier)
-                    if err:
-                        print(f"failed checks on commit {commit} as delta account: {err}")
-                        continue
-                    self.update_frontier(delta_acc, frontier, commit)
-                    self.current_frontiers[delta_acc.id] = frontier
-                    self.update_valid_frontier(commit)
-                case x:
-                    assert False, f"case {x} not handled"
 
-        for author in self.current_frontiers:
-            log = self.current_frontiers[author][author]
-            commit_id = log.last_non_forked.id
-            self.valid_commit_frontier.discard(self.get_commit(commit_id))
-            self.repo.update_ref(f"refs/heads/{log.author.decode()}/validated", commit_id.decode())
-        for commit in self.valid_commit_frontier:
-            self.repo.update_ref(f"refs/heads/other/validated/{commit.id.decode()}", commit.id.decode())
+            res = self.verify_message(commit)
+            if not res:
+                self.valid_commits.add(commit.id)
+                self.valid_commit_frontier[commit.author_name] = commit.id
+            else:
+                print(f"commit {commit} invalid: {res}")
+                self.invalid_commits.add(commit.id)
+
+
+        print(f"valid frontier: {self.valid_commit_frontier}")
+        print(f"frontier: {frontier_set}")
+        for author in self.valid_commit_frontier:
+            self.repo.update_ref(f"refs/heads/{author.decode()}/validated", self.valid_commit_frontier[author].decode())
+        # for commit_id in frontier_set:
+        #     self.repo.update_ref(f"refs/heads/{commit_id.decode()}/last", commit_id.decode())
+        for commit_id in self.invalid_commits:
+            self.repo.update_ref(f"refs/heads/invalid/{commit_id.decode()}", commit_id.decode())
+        # for commit in self.valid_commit_frontier:
+        #     self.repo.update_ref(f"refs/heads/other/validated/{commit.id.decode()}", commit.id.decode())
         self.perf_statistics.end()
 
+    def verify_message(self, m: Commit) -> list[str]:
+        msg_type = self.get_msg_type(m)
+        summary = self.recreate_summary(m)
+
+        res = []
+
+        authors: dict[bytes, set[bytes]] = dict()
+
+        if len(m.parents) > 0:
+            # M1
+            if not self.check_if_already_verified([m.parents[0]]):
+                return ["previous message of message not valid"]
+            # M2
+            if self.get_commit(m.parents[0]).author_name != m.author_name:
+                return ["previous message of message not same author"]
+            # M3
+            if msg_type == MessageType.DELTA_ACC:
+                if not self.check_if_already_verified(m.parents[1:]):
+                    return ["immediate dependencies of account message not valid"]
+            else:
+                # TODO check if parents of m exist
+                pass
+
+            # M4
+            for msgid in m.parents[1:]:
+                author = self.get_commit(msgid).author_name
+                if msg_type == MessageType.DELTA_ACC:
+                    if author in authors:
+                        return [f"author {author} appears more than once in dependencies"]
+                    if author == m.author_name:
+                        return [f"author {author} should not appear in dependencies"]
+                if author not in authors:
+                    authors[author] = set()
+                authors[author].add(msgid)
+
+        # M5
+        # TODO check signature here
+        # if m.signature_status not in [b"U", b"G"]:
+        #     return ["signature of message not valid"]
+
+        if len(m.parents) > 0:
+            # M7, F1, F2, F3'
+            for author in authors:
+                if msg_type == MessageType.DELTA_ACC and author in summary.byzantine:
+                    return [f"author {author} in the dependencies of account message is labelled byzantine"]
+                elif msg_type == MessageType.BYZ_ACK and author in summary.byz_acked:
+                    return [f"author {author} in the dependencies of byzantine acknowledgement message is already acknowledged"]
+                if not authors[author] <= summary.frontier[author]:
+                    return [f"dependencies {authors[author]} are not a maximal message in the frontier"]
+            if msg_type == MessageType.DELTA_ACC:
+                if summary.byzantine - summary.byz_acked:
+                    return [f"there is unacknowledged byzantine behaviour in the causal history of account message"]
+
+            # d8
+            if self.get_commit(m.parents[0]).author_date > m.author_date:
+                return [f"dates decreasing"]
+
+        if msg_type == MessageType.DELTA_ACC:
+            if m.author_name in summary.frontier:
+                a_old = summary.account
+            else:
+                a_old = None
+            a, err = self.get_delta_acc(m)
+            if err:
+                return err
+            assert a
+
+            # d1
+            if a_old:
+                assert len(m.parents) > 0
+                if a.created <= a_old.created and a.created != 0:
+                    return [f"delta account message: created field non-increasing"]
+                if a.destroyed <= a_old.destroyed and a.destroyed != 0:
+                    return [f"delta account message: destroyed field non-increasing"]
+                for author in a.acked:
+                    if author in a_old.acked and a.acked[author] <= a_old.acked[author]:
+                        return [f"delta account message: acked field non-increasing"]
+                for author in a.given:
+                    if author in a_old.given and a.given[author] <= a_old.given[author]:
+                        return [f"delta account message: given field non-increasing"]
+
+            # d2
+            a_new = Account(m.author_name)
+            if a_old:
+                a_new = copy.deepcopy(a_old)
+                a_new.merge(a)
+            if a_new.balance() < 0:
+                return [f"balance negative"]
+
+            # d6, d7
+            relevant_authors = set(a.acked)
+            for author in authors:
+                if author not in relevant_authors:
+                    return [f"dependencies {authors[author]} not relevant"]
+                relevant_authors.remove(author)
+            if relevant_authors:
+                return [f"dependencies {relevant_authors} not necessary"]
+
+            # d3
+            for author in a.acked:
+                if author not in summary.recieved or summary.recieved[author] < a.acked[author]:
+                    return [f"author {author} did not give the amount that was acked"]
+
+            # d4
+            # not checked
+
+            # d5
+            if a_old and a.created == a.destroyed == 0 and not a.given and not a.acked:
+                return ["empty non-first account message"]
+        return []
+
     def get_msg_type(self, commit: Commit) -> MessageType:
-        if commit.body == " ":
+        if commit.body == b"":
             return MessageType.BYZ_ACK
         return MessageType.DELTA_ACC
 
-    def update_valid_frontier(self, commit: Commit):
-        self.valid_commit_frontier.add(commit)
-        if len(commit.parents) == 0:
-            self.valid_commit_frontier.add(commit)
-        else:
-            pc = self.get_commit(commit.parents[0])
-            if pc in self.valid_commit_frontier:
-                self.valid_commit_frontier.remove(pc)
-            self.valid_commit_frontier.add(commit)
+    # def update_valid_frontier(self, commit: Commit):
+    #     self.valid_commit_frontier.add(commit)
+    #     if len(commit.parents) == 0:
+    #         self.valid_commit_frontier.add(commit)
+    #     else:
+    #         pc = self.get_commit(commit.parents[0])
+    #         if pc in self.valid_commit_frontier:
+    #             self.valid_commit_frontier.remove(pc)
+    #         self.valid_commit_frontier.add(commit)
 
     def verify_fork_ack_commit(self, commit: Commit) -> list[str]:
         """
         Checks invariants on `commit`, assuming that `commit` represents a
         fork acknowledgement. Invariants include:
-        - TODO: check the signature of the commit
         - the parent commits are valid messages
         - the commit has at least 2 parents
         - the first parent commit is from the same author as `commit`
-        - the other parent commits are fork proofs
+        - TODO the other parent commits add at least one new byzantine author to the set of previously known byzantine authors.
+        - TODO the other parent commits are a minimal commits that make an author byzantine (they either belong to a fork proof or are invalid but signed)
         """
         if len(commit.parents) < 2:
             return [f"less than 2 parents"]
         if not self.get_commit(commit.parents[0]).author_name == commit.author_name:
             return [f"first parent not the same author"]
-        res = []
-        for commit_id in commit.parents[1:]:
-            curr_commit = self.get_commit(commit_id)
-            if self.get_msg_type(curr_commit) != MessageType.FORK_PROOF:
-                res.append(f"{pformat_commit_id(curr_commit.id)} is not a fork proof")
-        if res:
-            return res
         if not self.check_if_already_verified(commit.parents):
             return [f"there are invalid parent commits"]
         return []
 
     def check_if_already_verified(self, commit_ids: list[bytes]):
-        for c in commit_ids:
-            if not self.repo.is_reachable(c.decode(), map(lambda x: x.id.decode(), self.valid_commit_frontier)):
-                return False
-        return True
+        return self.valid_commits >= set(commit_ids)
 
     def verify_delta_acc(self, a: Account, commit: Commit, frontier: Frontier) -> list[str]:
         """ASSUMPTION this method is only called when the commit isn't invalid yet"""
@@ -211,8 +297,8 @@ class GitCliGocVerifier:
             has_acked = True
         if a.given:
             has_given = True
-        if not (has_given or has_acked or has_destroyed or has_created):
-            return ["empty delta account"]
+        if not (has_given or has_acked or has_destroyed or has_created) and commit.parents != []:
+            return ["empty delta account as non-first message"]
         if len(commit.parents) == 0:
             assert not frontier
             old_acc = Account(commit.author_name)
@@ -247,9 +333,8 @@ class GitCliGocVerifier:
             authors_in_deps = set()
             for c in parent_iterator:
                 # === Relevantness of dependencies check ===
-                if c.author_name not in a.acked \
-                    and c.author_name not in a.given:
-                        res.append(f"dependency {c.id.decode()} not relevant")
+                if c.author_name not in a.acked:
+                    res.append(f"dependency {c.id.decode()} not relevant")
                 # === Single author dependencies check (2P-BFT-Log) ===
                 if c.author_name in authors_in_deps:
                     res.append(f"author {c.author_name} appears more than once in the dependencies")
@@ -258,9 +343,6 @@ class GitCliGocVerifier:
             for author in a.acked:
                 if author not in authors_in_deps:
                     res.append(f"necessary dependency for author {author} missing (acked)")
-            for author in a.given:
-                if author not in authors_in_deps:
-                    res.append(f"necessary dependency for author {author} missing (given)")
             # === Monotonicity of dependencies (2P-BFT-Log) ===
             from_cs = set(commit.parents)
             for author in authors_in_deps:
@@ -307,36 +389,66 @@ class GitCliGocVerifier:
         self.perf_statistics.end_timer("d1;d2;d3;d4")
         return res
 
-    def recreate_frontier(self, commit_ids: list[bytes]) -> dict[bytes, Log]:
-        if len(commit_ids) == 0: return {}
+    def recreate_summary(self, commit: Commit) -> Summary:
+        s = Summary(commit.author_name)
         # TBD maybe use --first-parent to only include the relevant authors into the log!
         # Except maybe when fork detection is necessary, then we need the other authors..
-        self.perf_statistics.start_timer("recreate frontier")
+        self.perf_statistics.start_timer("recreate summary")
 
-        authors = set([self.get_commit(cid).author_name for cid in commit_ids])
-        authors_to_consider = set.intersection(authors, self.current_frontiers)
-
-        frontier = None
-        commit_ids_set = set(commit_ids)
-        for a in authors_to_consider:
-            if a not in authors:
-                continue
-            last_commit_of_author = self.current_frontiers[a][a].last_non_forked
-            if last_commit_of_author.id in commit_ids_set:
-                commit_ids_set.remove(last_commit_of_author.id)
-                frontier = copy.deepcopy(self.current_frontiers[a]) # TODO avoid this copy
-                break
-
-        frontier = {} if frontier is None else frontier
-        from_commits = list(map(lambda x: x.decode(), commit_ids_set))
-        not_from_commits = list(map(lambda x: frontier[x].last_non_forked.id.decode(), frontier))
-        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(from_commits), not_from_commits)
+        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(bytes.decode, commit.parents)))
         for commit_id in relevant_commit_ids:
-            commit = self.get_commit(commit_id)
-            a, err = self.get_delta_acc(commit)
-            self.update_frontier(a, frontier, commit)
-        self.perf_statistics.end_timer("recreate frontier")
-        return frontier
+            n = self.get_commit(commit_id)
+            # if n.signature_status not in [b"U", b"G"]:
+            #     continue
+            if n.id in self.valid_commits:
+                if self.get_msg_type(n) == MessageType.DELTA_ACC:
+                    a, _ = self.get_delta_acc(n)
+                    assert isinstance(a, Account)
+                    if n.author_name == commit.author_name:
+                        s.account.merge(a)
+                    else:
+                        if commit.author_name in a.given:
+                            s.recieved[n.author_name] = max(s.recieved.get(n.author_name, 0), a.given[commit.author_name])
+                else:
+                    if n.author_name == commit.author_name:
+                        assert len(n.parents) > 1
+                        for msgid in n.parents[1:]:
+                            s.byz_acked.add(self.get_commit(msgid).author_name)
+            l: set[bytes] = set()
+            if n.author_name in s.frontier:
+                l = s.frontier[n.author_name]
+            if len(n.parents) > 0:
+                l.discard(n.parents[0])
+            l.add(n.id)
+            if n.id not in self.valid_commits or len(l) > 1:
+                s.byzantine.add(n.author_name)
+            s.frontier[n.author_name] = l
+
+        #####################
+        # authors = set([self.get_commit(cid).author_name for cid in commit_ids])
+        # authors_to_consider = set.intersection(authors, self.current_frontiers)
+
+        # frontier = None
+        # commit_ids_set = set(commit_ids)
+        # for a in authors_to_consider:
+        #     if a not in authors:
+        #         continue
+        #     last_commit_of_author = self.current_frontiers[a][a].last_non_forked
+        #     if last_commit_of_author.id in commit_ids_set:
+        #         commit_ids_set.remove(last_commit_of_author.id)
+        #         frontier = copy.deepcopy(self.current_frontiers[a]) # TODO avoid this copy
+        #         break
+
+        # frontier = {} if frontier is None else frontier
+        # from_commits = list(map(lambda x: x.decode(), commit_ids_set))
+        # not_from_commits = list(map(lambda x: frontier[x].last_non_forked.id.decode(), frontier))
+        # relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(from_commits), not_from_commits)
+        # for commit_id in relevant_commit_ids:
+        #     commit = self.get_commit(commit_id)
+        #     a, err = self.get_delta_acc(commit)
+        #     self.update_frontier(a, frontier, commit)
+        self.perf_statistics.end_timer("recreate summary")
+        return s
 
     def update_frontier(self, account: Account | None, frontier: Frontier, last_message: Commit):
         # print(f"updating frontier {frontier} with {account}, {last_message}")
@@ -587,12 +699,18 @@ class GitCliGocVerifier:
         return result
 
     def generate_report_files(self, path):
+        # # frontier = self.repo.retrieve_ref_commits("refs/heads/*/last")
+        # if len(valid_refs) == 0:
+        #     raise NotImplementedError("empty valid_refs not handled")
+        # print(f"valid frontier generate_report_files: {valid_refs}")
+        # print(f"frontier generate_report_files: {frontier}")
         valid_refs = self.repo.retrieve_ref_commits("refs/heads/*/validated")
-        frontier = self.repo.retrieve_ref_commits("refs/heads/*/last")
-        if len(valid_refs) == 0:
-            raise NotImplementedError("empty valid_refs not handled")
-        valid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), valid_refs)))
-        invalid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
+        invalid = self.repo.retrieve_ref_commits("refs/heads/invalid/*")
+        valid = []
+        for commit_id in self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), valid_refs))):
+            if commit_id not in invalid:
+                valid.append(commit_id)
+        # invalid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
         self.repo.write_verification_output(path, valid, invalid, {})
 
 def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path | None, perf_stats_file: Path | None):

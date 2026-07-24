@@ -103,7 +103,7 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
                 raise Exception(f"dependencies empty: tried to query ref {f"refs/heads/{author_to_filename(acker.id.decode())}/last"}")
             if self.store_unnecessary_deps == True:
                 deps = None
-            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=deps, acc_as_tree=self.store_acc_as_tree)
+            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=[], acc_as_tree=self.store_acc_as_tree)
             num_commits += 1
             validate_hash(commit_give, "commit_give")
             print(give_msg)
