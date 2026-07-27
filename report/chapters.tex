@@ -4,7 +4,7 @@ Contributions:
     \item algorithm for verifying GOC-Ledger state.
     \item efficient encoding of delta account as commit messages.
     \item proposal of new message type (byzantine acknowledgement)
-    \item invariants $d1$ to $d8$ and $F1$ to $F4$
+    \item invariants \var{d1} to \var{d8} and \var{F1} to \var{F4}
 \end{enumerate}
 TODO
 
@@ -198,8 +198,8 @@ $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to 
 
 Further, let $A^\delta = \acc(M)$ be the delta account stored in $M$.
 
-The invariant $d1$ ensures that there are no unnecessary GOCs stored in $A^\delta$. An unnecessary GOC is a GOC that doesn't increase the corresponding GOC in $L_\emph{before}$ when merged with it. This means each GOC in $A^\delta$ must be positive and strictly greater than the previous value in $L_\emph{before}$ if it exists.
-\begin{invariant}{$d1$}
+The invariant \var{d1} ensures that there are no unnecessary GOCs stored in $A^\delta$. An unnecessary GOC is a GOC that doesn't increase the corresponding GOC in $L_\emph{before}$ when merged with it. This means each GOC in $A^\delta$ must be positive and strictly greater than the previous value in $L_\emph{before}$ if it exists.
+\begin{invariant}{\var{d1}}
     (minimal):
     $A^\delta_\uparrow \neq 0 \neq A^\delta_\downarrow$ holds and for all $n \in \text{image}(A^\delta_\rightarrow)\cup \text{image}(A^\delta_\rightarrow)$, $n > 0$ holds.
     If $M_\emph{author} \in (L_\emph{before})_*$, then all of the following holds, where $A_\emph{old} = L_\emph{before}[M_\emph{author}]$:
@@ -210,51 +210,51 @@ The invariant $d1$ ensures that there are no unnecessary GOCs stored in $A^\delt
         \item for all $a \in A^\delta_{\leftarrow*} \cap (A_\emph{old})_{\leftarrow*}$, $(A_\emph{old})_{\leftarrow}[a] < A^\delta_{\leftarrow}[a]$ holds.
     \end{itemize}
 \end{invariant}
-The invariant $d5$ ensures that at least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ is defined, except if the message contains the first delta account.
-\begin{invariant}{$d5$}
+The invariant \var{d5} ensures that at least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ is defined, except if the message contains the first delta account.
+\begin{invariant}{\var{d5}}
     (account not empty): If $M_\emph{author} \in (L_\emph{before})_*$, then
     $A^\delta_\uparrow \neq \bot \lor A^\delta_\downarrow \neq \bot \lor A^\delta_\rightarrow \neq \emptyset \lor A^\delta_\leftarrow \neq \emptyset$ holds.
 \end{invariant}
-The invariant $d2$ ensures that accounts don't have negative balance.
-\begin{invariant}{$d2$}
+The invariant \var{d2} ensures that accounts don't have negative balance.
+\begin{invariant}{\var{d2}}
     (non-negative balance): The constraint $\balance(L_\textit{after}[M_\emph{author}]) \ge 0$ holds.
 \end{invariant}
-The invariant $d3$ ensures that all the tokens that were acknowledged, where actually given to the account before $M$.
-\begin{invariant}{$d3$}
+The invariant \var{d3} ensures that all the tokens that were acknowledged, where actually given to the account before $M$.
+\begin{invariant}{\var{d3}}
     (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[M_\emph{author}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$.
 \end{invariant}
-Invariant $d4$ ensures that only replicas that are permitted can create tokens. For the purposes of this report, we define the set $\var{Creators}$ which contains all the authors that are allowed to create tokens.
-\begin{invariant}{$d4$}
+Invariant \var{d4} ensures that only replicas that are permitted can create tokens. For the purposes of this report, we define the set $\var{Creators}$ which contains all the authors that are allowed to create tokens.
+\begin{invariant}{\var{d4}}
     (valid creator) If $\deltacc A_\uparrow \neq \bot$, $\deltacc A_\emph{author} \in \var{Creators}$.
 \end{invariant}
 
 We want the dependencies that are necessary to track the origins of a transaction. However, we don't want unnecessarily many dependencies. For example if $\acc(M)$ is a transaction between authors \var{A}, \var{B} and \var{C}, where \var{A} is the creator of the message, we want exactly one message in the immediate dependencies $M_\emph{deps}$ created by author \var{B} and exactly one created by \var{C}.
 
 A message $M'$ is relevant to message $M$ iff message $M$ acknowledges tokens from $M_\emph{author}$.
-\begin{invariant}{$d6$}
+\begin{invariant}{\var{d6}}
     (relevant dependencies): all the dependencies of $M$ are relevant, i.e. for all $M' \in \var{deps}(M)$ it holds that $M'_\textit{author} \in \acc(M)_{\leftarrow *}$.
 \end{invariant}
 One thing to note here is that only the authors in the field $\acc(M)_{\leftarrow *}$ get checked. If there is an author in $\acc(M)_{\rightarrow *}$ that doesn't exist or has exhibited byzantine behaviour, this is semantically the same as if the tokens given to that non-existent author were destroyed (meaning $\acc(M)_\downarrow$ being increased by this amount) and is always allowed.
 
-Furthermore, we need to check that there is exactly one dependency for each author mentioned in the acked field. That there is at most one dependency per author is covered by the invariant $M4$.
-\begin{invariant}{$d7$}
+Furthermore, we need to check that there is exactly one dependency for each author mentioned in the acked field. That there is at most one dependency per author is covered by the invariant \var{M4}.
+\begin{invariant}{\var{d7}}
     (necessary dependencies): for any author $a \in \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{author} = a$ and $\msgId(M') \in M_\textit{deps}$
 \end{invariant}
 
 Additionally, the date of the message can be checked. This is not necessary for any safety properties of the system, but allows sorting messages of one author by date instead of topologically.
-\begin{invariant}{$d8$}
+\begin{invariant}{\var{d8}}
     (non-decreasing dates): if $(\var{prev}(M))_\textit{date} \ne \bot$, $(\var{prev}(M))_\textit{date} \leq M_\textit{date}$ must hold
 \end{invariant}
 
 \subsection{Invariants on Message \(M\) inherited from 2P-BFT-Log}
 \begin{enumerate}
-    \item [M1] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \msgId(M'): M'$ exists and is valid.
-    \item [M2] \emph{(single author)}: if $M_\textit{prev} = \msgId(M')$ then $M'_\textit{author} = M_\textit{author}$.
-    \item [M3] \emph{(valid external dependencies)}: for all $\textit{\var{\var{msgId}}} \in M_\textit{deps}$, there exists a $M'$ such that $\msgId(M') = \var{msgId}$ and $M'_\textit{author} \neq M_\textit{author}$. If $\msgType(M) = \var{ACCOUNT}$, $\var{valid}(M')$ must be true.
-    \item [M4] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, and any $M' \in \var{deps}(M)$, the following must hold: If $\msgType(M) = \var{ACCOUNT}$, then there must be at most one $M'$ such that $M'_\textit{author} = \textit{author}$.
-    \item [M5] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$, i.e. $\textsc{CheckSignature}(M)$ is true.
-    \item [M6] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
-    \item [M7] \emph{(monotonic dependencies)}: For all $M'$ with $M \stackrel{log}{\rightsquigarrow} M'$, the following must hold: for all $(D, D') \in \var{deps}(M) \times \var{deps}(M')$ with $D_\textit{author} = D'_\textit{author}$, $D \le_\mathcal M D'$ holds.
+    \item [\var{M1}] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \msgId(M'): M'$ exists and is valid.
+    \item [\var{M2}] \emph{(single author)}: if $M_\textit{prev} = \msgId(M')$ then $M'_\textit{author} = M_\textit{author}$.
+    \item [\var{M3}] \emph{(valid external dependencies)}: for all $\textit{\var{\var{msgId}}} \in M_\textit{deps}$, there exists a $M'$ such that $\msgId(M') = \var{msgId}$ and $M'_\textit{author} \neq M_\textit{author}$. If $\msgType(M) = \var{ACCOUNT}$, $\var{valid}(M')$ must be true.
+    \item [\var{M4}] \emph{(single author dependencies)}: for any possible \textit{author} not equal to $M_\textit{author}$, and any $M' \in \var{deps}(M)$, the following must hold: If $\msgType(M) = \var{ACCOUNT}$, then there must be at most one $M'$ such that $M'_\textit{author} = \textit{author}$.
+    \item [\var{M5}] \emph{(self-certifying)}: $M_\textit{signature}$ is consistent with $M_\textit{author}$, i.e. $\textsc{CheckSignature}(M)$ is true.
+    \item [\var{M6}] \emph{(acyclic)}: $M_\textit{prev}$ does not reference a successor of $M$, i.e. ($M_\textit{prev} \neq M' : M \stackrel{\textit{log}}{\rightsquigarrow} M'$).
+    \item [\var{M7}] \emph{(monotonic dependencies)}: For all $M'$ with $M \stackrel{log}{\rightsquigarrow} M'$, the following must hold: for all $(D, D') \in \var{deps}(M) \times \var{deps}(M')$ with $D_\textit{author} = D'_\textit{author}$, $D \le_\mathcal M D'$ holds.
 \end{enumerate}
 Note: we adjusted M3 to ignore validity when $\msgType(M) = \var{BYZ\_ACK}$, as byzantine acknowledgements are allowed to have invalid messages as dependencies (see section \ref{sec:invariants-byz}). Furthermore, we adjusted M4 to only apply if $\msgType(M) = \var{ACCOUNT}$, because if the message is a byzantine acknowledgement, we want to be able to have two dependencies from the same author in case of a fork.
 % Validity properties if log $L$ is in growing phase:
@@ -277,35 +277,35 @@ Note: we adjusted M3 to ignore validity when $\msgType(M) = \var{BYZ\_ACK}$, as 
 \subsection{Invariants related to Byzantine Behaviour}
 \label{sec:invariants-byz}
 We want to ensure that authors don't make any transactions with an author that has created messages that exhibit byzantine behaviour. To enforce this, we check that any author that is part of the transaction must not exhibit byzantine behaviour in the set of messages known to author at the time (denoted $\mathcal H_\leq(M)$). This invariant is only enforced on messages of type \var{ACCOUNT}.
-\begin{invariant}{$F1$}
+\begin{invariant}{\var{F1}}
     \emph{(No transactions after byzantine message)}:\\
     If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any author $a \in \var{byz}(\mathcal H_<(M))$, there must be no message $M' \in \var{deps}(M)$ with $M'_\emph{author} = a$.
 \end{invariant}
 
-We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant $F2$). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
-\begin{invariant}{$F2$}
+We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant \var{F2}). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
+\begin{invariant}{\var{F2}}
     \emph{(acknowledgement before transaction)}:\\
     If $\msgType(M) = \var{ACCOUNT}$ then the following must hold for any message $M' \in \var{deps}(M)$:
     $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$.
 \end{invariant}
 
-To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages in the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant $F4$).
+To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages in the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant \var{F4}).
 
-\begin{invariant}{$F3$}
+\begin{invariant}{\var{F3}}
     \emph{(necessary dependencies of acknowledgement)}:\\
     If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $$\var{byz}(\mathcal H_\le((\var{deps}(M) \cup \{\var{prev}(M)\}) \setminus \{M'\}) ) \subset \var{byz}(\mathcal H_<(M))$$ must hold.
 \end{invariant}
 
-The invariant $F4$ ensures that additionally, any message that is in the dependencies must be a minimal message that makes its author byzantine.
+The invariant \var{F4} ensures that additionally, any message that is in the dependencies must be a minimal message that makes its author byzantine.
 
-\begin{invariant}{$F4$}
+\begin{invariant}{\var{F4}}
     \emph{(minimal dependencies of acknowledgement)}:\\
     If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $$\var{byz}(\mathcal H_<(M) \setminus \{M'\}) \subset \var{byz}(\mathcal H_<(M))$$ must hold.
 \end{invariant}
 
-Our algorithm does not verify the invariant $F4$, but $F3$ which is quite similar, but easier to verify. In $F3'$, there is no requirement for minimality of the message $M'$. This means that any of the messages that get added to the causal history by $M'$ must make a new author byzantine, not just the message $M'$.
+Our algorithm does not verify the invariant \var{F4}, but \var{F3} which is quite similar, but easier to verify. In \var{F3}, there is no requirement for minimality of the message $M'$. This means that any of the messages that get added to the causal history by $M'$ must make a new author byzantine, not just the message $M'$.
 
-If we only verify $F3$ this allows colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labeled as valid by $F3'$. If we look at $F4$, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour.
+If we only verify \var{F3} this allows colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labeled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour.
 
 \section{Syntax of Messages}
 \label{sec:syntax-of-msgs}
@@ -349,7 +349,7 @@ For readability the function \textsc{VerifyMessage} was split up into multiple c
 
 \subsection{Summary Data Structure}
 In the verification algorithm, we use a data structure that we call a summary.
-The summary is an accumulation of information necessary to verify the invariants $M7$, $F1$, $F2$, $F3$ and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}. A summary is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$. An explicit procedure for $\textsc{CreateSummary}$ is given in Algorithm~\ref{alg:create-summary}.
+The summary is an accumulation of information necessary to verify the invariants \var{M7}, \var{F1}, \var{F2}, \var{F3} and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}. A summary is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$. An explicit procedure for $\textsc{CreateSummary}$ is given in Algorithm~\ref{alg:create-summary}.
 \begin{table}[ht]
     \begin{tabular}{|l|l|p{6cm}|}
         \hline
@@ -380,9 +380,9 @@ The summary is an accumulation of information necessary to verify the invariants
 \end{table}
 
 \subsection{Creating the Summary of Message \(M\)}
-To create the summary, we first have to initialize the fields and then iterate over all the messages in $\mathcal H_<(M)$ in topological order with the condition that their signature is valid. If we focus on the second statement and the following in the loop (see line \ref{alg:create-summary:frontier}), we can see how the frontier is built up over the iterations. The goal is to store the maximal messages of each author in the frontier $\var{S}_\emph{frontier}$. If we assume that $L$ contains the maximal messages up to but not including $N$, we know that if $N_\emph{prev}$ is not in $L$, this means $N$ is concurrent to the messages in $L$, which means we need to add it to $L$. $L$ gets then stored back in $\var{S}_\emph{frontier}$, which means we build the frontier of $\mathcal H_<(M)$ incrementally. If the size of this resulting $L$ is greater than 1, we know the creator of $N$ must be byzantine, thus $N_\emph{author}$ is added to $\var{S}_\emph{byzantine}$.
+To create the summary, we first have to initialize the fields and then iterate over all the messages in $\mathcal H_<(M)$ in topological order with the condition that their signature is valid. If we focus on the second statement and the following in the loop (see line \ref{alg:create-summary:frontier}), we can see how the frontier is built up over the iterations. The goal is to store the maximal messages of each author in the frontier $\var{Summary}_\emph{frontier}$. If we assume that $L$ contains the maximal messages up to but not including $N$, we know that if $N_\emph{prev}$ is not in $L$, this means $N$ is concurrent to the messages in $L$, which means we need to add it to $L$. $L$ gets then stored back in $\var{Summary}_\emph{frontier}$, which means we build the frontier of $\mathcal H_<(M)$ incrementally. If the size of this resulting $L$ is greater than 1, we know the creator of $N$ must be byzantine, thus $N_\emph{author}$ is added to $\var{Summary}_\emph{byzantine}$.
 
-Now we come to the first part of the loop, which only runs if $N$ is a valid message and is there to update $\var{S}_\emph{account}$, $\var{S}_\emph{received}$ and $\var{S}_\emph{byz\_acked}$. If $N$ is an account message we do the following: if $N$ comes from the same author as $M$, we update $\var{S}_\emph{account}$ accordingly, otherwise $\var{S}_\emph{received}$ is updated with the number of tokens given to $M_\emph{author}$ (if any).
+Now we come to the first part of the loop, which only runs if $N$ is a valid message and is there to update $\var{Summary}_\emph{account}$, $\var{Summary}_\emph{received}$ and $\var{Summary}_\emph{byz\_acked}$. If $N$ is an account message we do the following: if $N$ comes from the same author as $M$, we update $\var{Summary}_\emph{account}$ accordingly, otherwise $\var{Summary}_\emph{received}$ is updated with the number of tokens given to $M_\emph{author}$ (if any).
 
 If $N$ is a byzantine acknowledgement message that comes from the same author as $M$, we acknowledge all the authors that appear in the dependencies.
 \begin{algorithm}[ht]
@@ -391,47 +391,47 @@ If $N$ is a byzantine acknowledgement message that comes from the same author as
 \begin{algorithmic}[1]
 \Function{CreateSummary}{message $M$, set of messages $F_\emph{valid}$, map $C_\emph{msg}$}
     \Statex \textbf{Precondition:} all messages in $\mathcal H_<(M)$ have been checked, i.e. for any message $N \in \mathcal H_<(M)$, $\var{valid}(N) \Leftrightarrow N \in F_\emph{valid}$ holds.
-    % \State $\var{S}_\emph{author} \gets M_\emph{author}$
-    \State $\var{S}_\emph{account} \gets \Call{InitializeAccount}{M_\emph{author}}$
-    \State $\var{S}_\emph{recieved} \gets \emptyset$ \Comment{Map of author to number}
-    \State $\var{S}_\emph{frontier} \gets \emptyset$ \Comment{Map of author to log}
-    \State $\var{S}_\emph{byzantine} \gets \emptyset$
-    \State $\var{S}_\emph{byz\_acked} \gets \emptyset$
+    % \State $\var{Summary}_\emph{author} \gets M_\emph{author}$
+    \State $\var{Summary}_\emph{account} \gets \Call{InitializeAccount}{M_\emph{author}}$
+    \State $\var{Summary}_\emph{recieved} \gets \emptyset$ \Comment{Map of author to number}
+    \State $\var{Summary}_\emph{frontier} \gets \emptyset$ \Comment{Map of author to log}
+    \State $\var{Summary}_\emph{byzantine} \gets \emptyset$
+    \State $\var{Summary}_\emph{byz\_acked} \gets \emptyset$
     \ForAll{$N \in \mathcal H_<(M)$ with $\Call{CheckSignature}{N}$ in topological order}
         \If{$N\in F_\emph{valid}$}
             \If{$\msgType(N) = \var{ACCOUNT}$}
                 \State $A^\delta \gets \acc(N)$
                 \If{$N_\emph{author} = M_\emph{author}$}
-                    \State $\var{S}_\emph{account} \gets \var{S}_\emph{account} \sqcup A^\delta$
+                    \State $\var{Summary}_\emph{account} \gets \var{Summary}_\emph{account} \sqcup A^\delta$
                 \Else
                     \If{$M_\emph{author} \in A^\delta_{\rightarrow*}$}
-                        \If{$N_\emph{author} \in \var{S}_\emph{received}$}
-                            \State $\var{old} \gets \var{S}_\emph{received}[N_\emph{author}]$
+                        \If{$N_\emph{author} \in \var{Summary}_\emph{received}$}
+                            \State $\var{old} \gets \var{Summary}_\emph{received}[N_\emph{author}]$
                         \Else
                             \State $\var{old} \gets 0$
                         \EndIf
-                        \State $\var{S}_\emph{received}[N_\emph{author}] \gets \max(\var{old}, A^\delta_\rightarrow[M_\emph{author}])$
+                        \State $\var{Summary}_\emph{received}[N_\emph{author}] \gets \max(\var{old}, A^\delta_\rightarrow[M_\emph{author}])$
                     \EndIf
                 \EndIf
             \Else \Comment{$\msgType(N) = \var{BYZ\_ACK}$}
                 \If{$N_\emph{author} = M_\emph{author}$}
                     \ForAll{$\var{msgId} \in N_\emph{deps}$}
-                        \State $\var{S}_\emph{byz\_acked} \gets \var{S}_\emph{byz\_acked} \cup \{(C_\emph{msg}[msgId])_\emph{author}\}$
+                        \State $\var{Summary}_\emph{byz\_acked} \gets \var{Summary}_\emph{byz\_acked} \cup \{(C_\emph{msg}[msgId])_\emph{author}\}$
                     \EndFor
                 \EndIf
             \EndIf
         \EndIf
         \State $L \gets \emptyset$ \label{alg:create-summary:frontier}
-        \If{$N_\emph{author} \in (\var{S}_\emph{frontier})_*$}
-            \State $L \gets \var{S}_\emph{frontier}[N_\emph{author}]$
+        \If{$N_\emph{author} \in (\var{Summary}_\emph{frontier})_*$}
+            \State $L \gets \var{Summary}_\emph{frontier}[N_\emph{author}]$
         \EndIf
         \State $L \gets (L \setminus \{N_\emph{prev}\}) \cup \{\msgId(N)\}$
         \If{$N \notin F_\emph{valid} \lor \lvert L \rvert > 1$}
-            \State $\var{S}_\emph{byzantine} \gets \var{S}_\emph{byzantine} \cup \{N_\emph{author}\}$
+            \State $\var{Summary}_\emph{byzantine} \gets \var{Summary}_\emph{byzantine} \cup \{N_\emph{author}\}$
         \EndIf
-        \State $\var{S}_\emph{frontier}[N_\emph{author}] \gets L$
+        \State $\var{Summary}_\emph{frontier}[N_\emph{author}] \gets L$
     \EndFor
-    \State \Return \var{S}
+    \State \Return \var{Summary}
 
     % \State $\var{Frontier} \gets \emptyset$
     % \ForAll{$N \in \mathcal H_<(M)$ with $\Call{CheckSignature}{N}$ in topological order}
@@ -460,7 +460,7 @@ If $N$ is a byzantine acknowledgement message that comes from the same author as
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Verifying the invariants \(M1\) to \(M7\), \(F1\), \(F2\), and \(F3\)}
+\subsection{Verifying the invariants \var{M1} to \var{M7}, \var{F1}, \var{F2}, and \var{F3}}
 \label{sec:m-invariant-checks}
 
 The invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$, see Table \ref{tab:invariant-code-msg}. Each of the simple conditions corresponds to an if statement that returns false if the condition is met.
@@ -470,14 +470,14 @@ The invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{va
 \hline
 \textbf{Invariant} & \textbf{Violated when} \\
 \hline
-$M1$ & $M_\emph{prev} \ne \bot \wedge M_\emph{prev} \notin F_\emph{valid}$\\ \hline
-$M2$ & $M_\emph{prev} \neq \bot \wedge (C_\emph{msg}[M_\emph{prev}])_\emph{author} \ne M_\emph{author}$\\ \hline
-\multirow{2}{*}{$M3$} & $M_\emph{deps} \not\subseteq F_\emph{valid} \land \msgType(M) = \var{ACCOUNT}$ \\
+\var{M1} & $M_\emph{prev} \ne \bot \wedge M_\emph{prev} \notin F_\emph{valid}$\\ \hline
+\var{M2} & $M_\emph{prev} \neq \bot \wedge (C_\emph{msg}[M_\emph{prev}])_\emph{author} \ne M_\emph{author}$\\ \hline
+\multirow{2}{*}{\var{M3}} & $M_\emph{deps} \not\subseteq F_\emph{valid} \land \msgType(M) = \var{ACCOUNT}$ \\
 & $\ \lor M_\emph{deps} \not\subseteq \{\msgId(M) \mid M \in \mathcal M\}$ \\ \hline
-$M4$ & see Algorithm \ref{alg:m4}\\ \hline
-$M5$ & $\lnot\Call{CheckSignature}{M}$\\ \hline
-$M6$ & never, because message graph is cryptographic hash-graph \\ \hline
-$M7$, $F1$ - $F4$ & see Algorithm \ref{alg:m7f1} \\ \hline
+\var{M4} & see Algorithm \ref{alg:m4}\\ \hline
+\var{M5} & $\lnot\Call{CheckSignature}{M}$\\ \hline
+\var{M6} & never, because message graph is cryptographic hash-graph \\ \hline
+\var{M7}, \var{F1} - \var{F4} & see Algorithm \ref{alg:m7f1} \\ \hline
 \hline
 \end{tabular}
 \caption{Invariants expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$}
@@ -485,12 +485,12 @@ $M7$, $F1$ - $F4$ & see Algorithm \ref{alg:m7f1} \\ \hline
 \end{table}
 
 \begin{algorithm}[ht]
-\caption{Code snippet verifying $M4$}
+\caption{Code snippet verifying \var{M4}}
     \label{alg:m4}
 \begin{algorithmic}[1]
     \Statex \ldots \vphantom{I}
     \State \var{Authors} $\gets \emptyset$ \Comment map of author to set of message ids
-    \ForAll{$\var{msgId} \in M_\emph{deps}$} \Comment $M4$
+    \ForAll{$\var{msgId} \in M_\emph{deps}$} \Comment \var{M4}
         \State $\var{Author} \gets (C_\emph{msg}[\var{msgId}])_\emph{author}$
         \If{$\msgType(M) = \var{ACCOUNT}$}
             \If{$\var{Author} \in$ keys of \var{Authors}} \label{alg:m4:check1}
@@ -511,10 +511,10 @@ $M7$, $F1$ - $F4$ & see Algorithm \ref{alg:m7f1} \\ \hline
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
-The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks if an author occurs more than once (see line~\ref{alg:m4:check1}) and if the author of the message occurs in its own dependencies (see line~\ref{alg:m4:check2}). If either of these conditions is true, the message is invalid. Additionally the mapping \var{Author} of authors in the dependencies to messages of them that are pointed at is computed, which is used by following code snippets.
+The code snippet in Algorithm~\ref{alg:m4} validates invariant \var{M4}. It checks if an author occurs more than once (see line~\ref{alg:m4:check1}) and if the author of the message occurs in its own dependencies (see line~\ref{alg:m4:check2}). If either of these conditions is true, the message is invalid. Additionally the mapping \var{Author} of authors in the dependencies to messages of them that are pointed at is computed, which is used by following code snippets.
 
 \begin{algorithm}[ht]
-\caption{Code snippet verifying $M7$, $F1$, $F2$, and $F3$}
+\caption{Code snippet verifying \var{M7}, \var{F1}, \var{F2}, and \var{F3}}
 \label{alg:m7f1}
 \begin{algorithmic}
     \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in Algorithm~\ref{alg:m4})
@@ -537,14 +537,14 @@ The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks i
             \State \Return false
         \EndIf
         % \If {$\lvert(\var{Log})_\emph{msg\_frontier}\rvert = 1$}
-        %     \If {$\var{Authors}[\var{Author}] \rightsquigarrow C_\emph{msg}[(\var{Log})_\emph{last}]$} \Comment $M7$
+        %     \If {$\var{Authors}[\var{Author}] \rightsquigarrow C_\emph{msg}[(\var{Log})_\emph{last}]$} \Comment \var{M7}
         %         \State \Return false
         %     \EndIf
         % \Else
-        %     \State \Return false \Comment $F1$
+        %     \State \Return false \Comment \var{F1}
         % \EndIf
     \EndFor
-    \If{$\msgType(M) = \var{ACCOUNT}$} \Comment $F2$
+    \If{$\msgType(M) = \var{ACCOUNT}$} \Comment \var{F2}
         \If{$\var{Summary}_\emph{byzantine} \not\subseteq \var{Summary}_\emph{byz\_acked}$}
             \State \Return false
         \EndIf
@@ -552,14 +552,14 @@ The code snippet in Algorithm~\ref{alg:m4} validates invariant $M4$. It checks i
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
-To check the invariants $F1$, $F3$ and $M7$ (see Algorithm~\ref{alg:m7f1}), we have to iterate over the authors that are in the immediate dependencies of $M$, $\var{Authors}_*$. If $M$ is an account message and one of the authors is byzantine according to the summary of $M$, then $M$ is invalid (see line \ref{alg:line:f1}), because it violates $F1$.
-If $M$ is a byzantine acknowledgement but the author was already acknowledged as byzantine, then this message is invalid as well (see line \ref{alg:line:f3-prime}) because it violates $F3$.
-Furthermore if any of the immediate dependencies is not part of the maximal messages in their corresponding log, then the message is invalid (see line \ref{alg:line:m7}) because it violates $M7$.
+To check the invariants \var{F1}, \var{F3} and \var{M7} (see Algorithm~\ref{alg:m7f1}), we have to iterate over the authors that are in the immediate dependencies of $M$, $\var{Authors}_*$. If $M$ is an account message and one of the authors is byzantine according to the summary of $M$, then $M$ is invalid (see line \ref{alg:line:f1}), because it violates \var{F1}.
+If $M$ is a byzantine acknowledgement but the author was already acknowledged as byzantine, then this message is invalid as well (see line \ref{alg:line:f3-prime}) because it violates \var{F3}.
+Furthermore if any of the immediate dependencies is not part of the maximal messages in their corresponding log, then the message is invalid (see line \ref{alg:line:m7}) because it violates \var{M7}.
 
-To verify $F2$, we have to check that every author that exhibited byzantine behaviour (contained in $\var{Summary}_\emph{byzantine}$) was also acknowledged (contained in $\var{Summary}_\emph{byz\_acked}$). If any of the authors in this frontier are byzantine but not acknowledged as such, $F2$ is violated.
+To verify \var{F2}, we have to check that every author that exhibited byzantine behaviour (contained in $\var{Summary}_\emph{byzantine}$) was also acknowledged (contained in $\var{Summary}_\emph{byz\_acked}$). If any of the authors in this frontier are byzantine but not acknowledged as such, \var{F2} is violated.
 
 
-\subsection{Verifying the invariants \(d1\) to \(d8\)}
+\subsection{Verifying the invariants \var{d1} to \var{d8}}
 \label{sec:delta-invariant-checks}
 
 The following code snippets are wrapped inside a big if statement on the condition that the message has message type $\var{ACCOUNT}$. Additionally, we assume that the variables $A_\emph{old}$, $\deltacc{A}$ and $A_\emph{new}$ have been computed as in Algorithm~\ref{alg:dpre}, and \var{Summary} has been computed as in Algorithm~\ref{alg:m7f1}.
@@ -590,18 +590,18 @@ As before, many invariant checks are simple if-conditions, which are re-expresse
 \hline
 \textbf{Invariant} & \textbf{Violated when} \\
 \hline
-\multirow{4}{*}{$d1$} & $A_\emph{old} \ne \bot \land ($\\
+\multirow{4}{*}{\var{d1}} & $A_\emph{old} \ne \bot \land ($\\
     & $\quad (\deltacc{A}_\uparrow \ne \bot \wedge \deltacc{A}_\uparrow \leq (A_\emph{old})_\uparrow)$\\
     & $\quad \, \vee \,(\deltacc{A}_\downarrow \ne \bot \wedge \deltacc{A}_\downarrow \leq (A_\emph{old})_\downarrow)$\\
     & $\quad \, \vee \,(\exists a \in \deltacc{A}_{\rightarrow*}: a \in (A_\emph{old})_{\rightarrow*} \wedge \deltacc{A}_\rightarrow[a] \leq (A_\emph{old})_\rightarrow[a])$\\
     & $\quad \, \vee \,(\exists a \in \deltacc{A}_{\leftarrow*} : a \in (A_\emph{old})_{\leftarrow*} \wedge \deltacc{A}_\leftarrow[a] \leq (A_\emph{old})_\leftarrow[a])$\\
     &$)$\\
-$d2$ & $\Call{Balance}{A_\emph{new}} < 0$\\
-$d3$ & see Algorithm \ref{alg:d3}\\
-$d4$ & $\deltacc{A}_\uparrow \ne \bot \wedge M_\emph{author} \notin \var{Creators}$ \\
-$d5$ & $A_\emph{old} \ne \bot \land \deltacc{A}_\downarrow = \deltacc{A}_\uparrow = \bot \wedge \deltacc{A}_\rightarrow = \deltacc{A}_\leftarrow = \emptyset$ \\
-$d6$, $\delta7$ & see Algorithm \ref{alg:d67}\\
-$d8$ & $(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$\\
+\var{d2} & $\Call{Balance}{A_\emph{new}} < 0$\\
+\var{d3} & see Algorithm \ref{alg:d3}\\
+\var{d4} & $\deltacc{A}_\uparrow \ne \bot \wedge M_\emph{author} \notin \var{Creators}$ \\
+\var{d5} & $A_\emph{old} \ne \bot \land \deltacc{A}_\downarrow = \deltacc{A}_\uparrow = \bot \wedge \deltacc{A}_\rightarrow = \deltacc{A}_\leftarrow = \emptyset$ \\
+\var{d6}, $\delta7$ & see Algorithm \ref{alg:d67}\\
+\var{d8} & $(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$\\
 \hline
 \end{tabular}
 \caption{Invariants expressed in terms of $A_\emph{old}$, $\deltacc{A}$, $A_\emph{new}$, $C_\emph{msg}$ and $M$}
@@ -611,34 +611,34 @@ $d8$ & $(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$\\
 
 
 \begin{algorithm}[ht]
-    \caption{Code snippet verifying $d6$ and $d7$}
+    \caption{Code snippet verifying \var{d6} and \var{d7}}
     \label{alg:d67}
 \begin{algorithmic}
     \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in Algorithm~\ref{alg:m4})
     \Statex \ldots \vphantom{I}
     \State \var{RelevantAuthors} $\gets \deltacc{A}_{\leftarrow*}$
     % ASSUME_CAUSAL_STABILITY
-    \ForAll{$a \in \var{Authors}_*$} \Comment $d6$
+    \ForAll{$a \in \var{Authors}_*$} \Comment \var{d6}
         \If{$a \not\in$ \var{RelevantAuthors}}
             \State \Return false
         \EndIf
         \State \var{RelevantAuthors} $\gets$ \var{RelevantAuthors} $\setminus \{a\}$
     \EndFor
-    \If{\var{RelevantAuthors} $\ne \emptyset$} \Comment $d7$
+    \If{\var{RelevantAuthors} $\ne \emptyset$} \Comment \var{d7}
         \State \Return false
     \EndIf
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
 % ASSUME_CAUSAL_STABILITY
-To check $d6$ and $d7$ (see Algorithm~\ref{alg:d67}) we create the set of authors \var{RelevantAuthors} that are relevant to the transaction, which are the authors that were the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared more than once in the dependencies, in either case the message is invalid.
+To check \var{d6} and \var{d7} (see Algorithm~\ref{alg:d67}) we create the set of authors \var{RelevantAuthors} that are relevant to the transaction, which are the authors that were the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared more than once in the dependencies, in either case the message is invalid.
 
 % ASSUME_CAUSAL_STABILITY
-To check $d7$, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was fully consumed in the preceding loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
+To check \var{d7}, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was fully consumed in the preceding loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
 \\
 
 \begin{algorithm}[ht]
-    \caption{Code snippet verifying $d3$}
+    \caption{Code snippet verifying \var{d3}}
     \label{alg:d3}
 \begin{algorithmic}
     \Statex \textbf{Precondition:} \var{Authors} has been calculated as in Algorithm~\ref{alg:m4}, \var{Summary} has been calculated as in Algorithm~\ref{alg:m7f1}.
@@ -651,7 +651,7 @@ To check $d7$, i.e. that all necessary dependencies are present, we can check wh
     \Statex \ldots \vphantom{I}
 \end{algorithmic}
 \end{algorithm}
-To check $d3$ (see Algorithm~\ref{alg:d3}), we must go through the authors that $\deltacc{A}$ acknowledges tokens from and check that these authors gave at least the acknowledged number of tokens to the account.
+To check \var{d3} (see Algorithm~\ref{alg:d3}), we must go through the authors that $\deltacc{A}$ acknowledges tokens from and check that these authors gave at least the acknowledged number of tokens to the account.
 
 
 
@@ -710,11 +710,11 @@ To check $d3$ (see Algorithm~\ref{alg:d3}), we must go through the authors that 
 
 
 % \subsection{Rationale}
-% When storing the messages in a hash graph using a cryptographically secure hash function, $M6$ does not need to be checked, because for someone to create a cycle in a hash graph, they must find a collision which is assumed to be impossible when using such a hash function.
-% Invariants $\delta1$, $\delta4$, $\delta5$, $M6$ are straightforward to check, as they only involve data stored in the message in question.
-% To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, $M1$, $M2$, $M3$, $M4$, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $C_\emph{msg}[\var{msgId}] = M$ where $\msgId(M) = \var{msgId}$. This $C_\emph{msg}$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
+% When storing the messages in a hash graph using a cryptographically secure hash function, \var{M6} does not need to be checked, because for someone to create a cycle in a hash graph, they must find a collision which is assumed to be impossible when using such a hash function.
+% Invariants $\delta1$, $\delta4$, $\delta5$, \var{M6} are straightforward to check, as they only involve data stored in the message in question.
+% To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, \var{M1}, \var{M2}, \var{M3}, \var{M4}, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $C_\emph{msg}[\var{msgId}] = M$ where $\msgId(M) = \var{msgId}$. This $C_\emph{msg}$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
 
-% Now the only invariants left to check are $\delta2$, $M7$ and $F1$.\todo{write justification on why we need to compute the frontier}
+% Now the only invariants left to check are $\delta2$, \var{M7} and \var{F1}.\todo{write justification on why we need to compute the frontier}
 
 \chapter{Implementation}
 We implement the verification algorithm in Python. We made this choice because Python is ported to many platforms and because its integer implementation allows for arbitrarily large numbers.
