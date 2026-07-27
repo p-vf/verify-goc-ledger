@@ -16,7 +16,7 @@ db/
 testcases/
 benchmarks/
 *.pdf
-!figures/*.pdf
+!report/figures/*.pdf
 
 # LaTeX-generated files
 *.aux
@@ -29,4 +29,5 @@ benchmarks/
 *.bbl
 *.bcf
 *.blg
+*.nlo
 *.run.xml

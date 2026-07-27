@@ -1,0 +1,78 @@
+\documentclass[a4paper, 10pt, oneside]{memoir}
+\usepackage[citeauthor]{basilea}
+
+\usepackage{dirtree}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+\usepackage{todonotes}
+\usepackage{hyperref}
+\usepackage{multirow}
+\usepackage{csquotes}
+% \usepackage{biblatex}
+% \addbibresource{references.bib}
+\usepackage{tcolorbox}
+\newtcolorbox{invariant}[1][]{%
+   attach title to upper={\ },
+   title=#1,
+}
+
+%\newcommand{\todo}[1]{\emph{\colorbox{Yellow}{TODO #1}}}
+\newcommand{\balance}[0]{\textsc{Balance}}
+\newcommand{\apply}[0]{\textit{apply}}
+\newcommand{\acc}[0]{\textit{acc}}
+\newcommand{\msgId}[0]{\texttt{MsgId}}
+\newcommand{\deltacc}[1]{#1^\delta}
+\newcommand{\var}[1]{\textsl{#1}}
+\newcommand{\msgType}[0]{\texttt{MsgType}}
+\newcommand{\forkproof}[0]{\var{forkProof}}
+\newcommand{\definedas}[0]{\stackrel{def}{=}}
+\setlength{\marginparwidth}{100pt}
+
+% Source - https://tex.stackexchange.com/a/306992
+% Posted by egreg
+% Retrieved 2026-06-25, License - CC BY-SA 3.0
+\makeatletter
+\pdfstringdefDisableCommands{\let\(\fake@math}
+\newcommand\fake@math{}% just for safety
+\def\fake@math#1\){[math]}
+\makeatother
+
+
+\title{Optimization of Invariant Verification for Safe Replication of BFT-Logs}
+\thesistype{Bachelor Project}
+\department{Department of Mathematics and Computer Science}
+\faculty{Natural Science Faculty of the University of Basel}
+\research{Computer Networks \\ https://cn.dmi.unibas.ch/}
+\examiner{Prof. Dr. Christian Tschudin}
+\supervisor{Dr. Erick Lavoie}
+\authors{Pascal von Fellenberg}
+\email{pascal.vonfellenberg@unibas.ch}
+\immatriculnr{23-052-863}
+\date{\today{}}
+\ulogo{figures/logo-en}
+
+
+\begin{document}
+\selectlanguage{english}
+\thesisfront
+\maketitle
+\pagestyle{thesis}
+
+\input{front}
+
+\thesistoc
+\thesismain
+
+\input{chapters}
+
+\thesisappendix
+\thesisbib
+\begin{appendices}
+   %
+\end{appendices}
+\thesisback
+
+\end{document}
