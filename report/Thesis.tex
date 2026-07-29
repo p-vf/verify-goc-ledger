@@ -11,8 +11,6 @@
 \algtext*{EndIf}
 \algtext*{EndFunction}
 \usepackage{algorithm}
-\usepackage{todonotes}
-\usepackage{hyperref}
 \usepackage{multirow}
 \usepackage{csquotes}
 % \usepackage{biblatex}
@@ -33,7 +31,9 @@
 \newcommand{\msgType}[0]{\texttt{MsgType}}
 \newcommand{\forkproof}[0]{\var{forkProof}}
 \newcommand{\definedas}[0]{\stackrel{def}{=}}
-\setlength{\marginparwidth}{100pt}
+\newcommand{\happensbeforelog}[0]{\stackrel{\text{log}}{\rightsquigarrow}}
+\renewcommand{\max}[0]{\text{max}}
+% \setlength{\marginparwidth}{100pt}
 
 % Source - https://tex.stackexchange.com/a/306992
 % Posted by egreg
