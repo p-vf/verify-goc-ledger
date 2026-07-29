@@ -72,7 +72,7 @@ class Repo:
         return res
 
     def create_repo(self):
-        run_cmd(f"git init --object-format sha256 {self.git_path}")
+        run_cmd(["git", "init", "--object-format", "sha256", self.git_path])
         run_cmd("git config gpg.format ssh", cwd=self.git_path)
 
     def create_tree(self, data: TreeDict, dir: str) -> str:

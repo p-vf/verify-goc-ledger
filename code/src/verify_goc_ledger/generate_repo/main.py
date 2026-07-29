@@ -98,12 +98,11 @@ class ValidRepoGeneratorParetoAckDelayed(BaseRepoGenerator):
                 can_ack_from.append((acker_id.encode(), giver_id.encode()))
             give_act = giver.give(amount, acker.id)
             give_msg = f"{(giver.id.decode())} gave {amount} CHF to {(acker.id.decode())}, has given {giver.given[acker.id]} CHF"
-            deps = self.repo.show_ref(f"refs/heads/{author_to_filename(acker.id.decode())}/last")
-            if len(deps) == 0:
-                raise Exception(f"dependencies empty: tried to query ref {f"refs/heads/{author_to_filename(acker.id.decode())}/last"}")
             if self.store_unnecessary_deps == True:
                 deps = None
-            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=[], acc_as_tree=self.store_acc_as_tree)
+            else:
+                deps = []
+            commit_give = add_delta_account_as_commit(give_act, self.repo, deps=deps, acc_as_tree=self.store_acc_as_tree)
             num_commits += 1
             validate_hash(commit_give, "commit_give")
             print(give_msg)

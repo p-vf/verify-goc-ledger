@@ -16,7 +16,8 @@ class ParetoSampler(Generic[T]):
         self.k = k
         self.arr = arr
         n = len(arr)
-        self.bin_sizes = [self.F_inv(((n-i-1) / (n))) for i in range(n)]
+        # self.bin_sizes = [self.F_inv(((n-i-1) / (n))) for i in range(n)]
+        self.bin_sizes = [self.F_inv(random.random()) for _ in range(n)]
         cumulative_value = 0
         self.cumulated_bins = [0] * n
         for i, x in enumerate(self.bin_sizes):
@@ -100,10 +101,10 @@ def get_some_entry(s: set[T]) -> T:
 
 def get_public_keys(keydir: Path, no_ids: int):
     ids: list[str] = []
-    run_cmd(f"mkdir -p {keydir}") # in case the key directory doesn't exist
+    run_cmd(["mkdir", "-p", str(keydir)]) # in case the key directory doesn't exist
     for n in range(no_ids):
-        run_cmd(f"ssh-keygen -f {keydir/str(n)} -N \"\" -q -t ed25519 -C \"\"") # if the keys don't exist, create them
-        new_id = run_cmd(f"ssh-keygen -f {keydir/str(n)} -e | head -n 3 | tail -n 1").decode().strip()
+        run_cmd(["ssh-keygen", "-f", str(keydir/str(n)), "-N", "", "-q", "-t", "ed25519", "-C", ""]) # if the keys don't exist, create them
+        new_id = run_cmd(f"ssh-keygen -f {shlex.quote(str(keydir/str(n)))} -e | head -n 3 | tail -n 1").decode().strip()
         ids.append(new_id)
         filename = author_to_filename(new_id)
         os.rename(keydir/(str(n) + ".pub"), keydir/(filename + ".pub"))
@@ -118,7 +119,7 @@ def configure_allowed_signers(repo_dir: Path, keydir: Path, author_names: list[s
     with open(repo_dir/allowed_signers_path, "w") as file:
         lines = []
         for a in author_names:
-            lines.append(" namespace=\"git\" " + run_cmd(f"cat {keydir/author_to_filename(a)}.pub").decode().strip() + "\r\n")
+            lines.append(" namespace=\"git\" " + run_cmd(["cat", str(keydir/(author_to_filename(a) + ".pub"))]).decode().strip() + "\r\n")
         file.writelines(lines)
 
     run_cmd(f"git config gpg.ssh.allowedSignersFile {allowed_signers_path}", cwd=str(repo_dir))

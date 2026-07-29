@@ -10,7 +10,7 @@ import pushstream
 from pushstream.producer import Values
 from pushstream.transformer import Map, Subprocess
 from pushstream.consumer import Reduce
-from common.misc import CatFileParser
+from common.misc import CatFileParser, author_to_filename
 import pprint
 
 from pathlib import Path
@@ -60,8 +60,9 @@ class Summary:
         self.recieved: dict[bytes, int] = dict()
 
 class GitCliGocVerifier:
-    def __init__(self, git_path: str, enable_perf_stats: bool):
+    def __init__(self, git_path: str, enable_perf_stats: bool, enable_summary_cache: bool):
         self.repo = Repo(git_path, commit_format=commit_format)
+        self.enable_summary_cache = enable_summary_cache
         self._commit_cache: dict[bytes, Commit] = {}
         self.commit_cache_hits = 0
         self._obj_cache: dict[bytes, bytes] = {}
@@ -111,14 +112,15 @@ class GitCliGocVerifier:
                 print(f"commit {commit} invalid: {res}")
                 self.invalid_commits.add(commit.id)
 
-            self.update_summary(commit, commit.author_name, self.summary_cache[commit.author_name])
+            if self.enable_summary_cache:
+                self.update_summary(commit, commit.author_name, self.summary_cache[commit.author_name])
 
         print(f"summary_cache hits: {self._summary_cache_hits}")
         print(f"summary_cache:\n{self.summary_cache}")
         # print(f"valid frontier: {self.valid_commit_frontier}")
         # print(f"frontier: {frontier_set}")
         for author in self.valid_commit_frontier:
-            self.repo.update_ref(f"refs/heads/{author.decode()}/validated", self.valid_commit_frontier[author].decode())
+            self.repo.update_ref(f"refs/heads/{author_to_filename(author.decode())}/validated", self.valid_commit_frontier[author].decode())
         # for commit_id in frontier_set:
         #     self.repo.update_ref(f"refs/heads/{commit_id.decode()}/last", commit_id.decode())
         for commit_id in self.invalid_commits:
@@ -399,14 +401,15 @@ class GitCliGocVerifier:
         self.perf_statistics.start_timer("create summary")
         s = Summary(commit.author_name)
         not_commits = []
-        if commit.author_name in self.summary_cache and len(commit.parents) > 0:
-            t = self.summary_cache[commit.author_name]
-            front_commits = t.frontier[commit.author_name]
-            if commit.parents[0] in front_commits:
-                assert len(front_commits) == 1
-                self._summary_cache_hits += 1
-                s = t
-                not_commits = list(front_commits)
+        if self.enable_summary_cache:
+            if commit.author_name in self.summary_cache and len(commit.parents) > 0:
+                t = self.summary_cache[commit.author_name]
+                front_commits = t.frontier[commit.author_name]
+                if commit.parents[0] in front_commits:
+                    assert len(front_commits) == 1
+                    self._summary_cache_hits += 1
+                    s = t
+                    not_commits = list(front_commits)
 
         relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(bytes.decode, commit.parents)), list(map(bytes.decode, not_commits)))
         for commit_id in relevant_commit_ids:
@@ -731,10 +734,10 @@ class GitCliGocVerifier:
         # invalid = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(lambda x: x.decode(), frontier)), list(map(lambda x: x.decode(), valid_refs)))
         self.repo.write_verification_output(path, valid, invalid, {})
 
-def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path | None, perf_stats_file: Path | None):
+def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path | None, perf_stats_file: Path | None, enable_summary_cache: bool):
     generate_stats = not perf_stats_file is None
     generate_report_files = not report_file_path is None
-    g = GitCliGocVerifier(git_path, generate_stats)
+    g = GitCliGocVerifier(git_path, generate_stats, enable_summary_cache)
     if profile_file:
         path = str(profile_file)
         cProfile.runctx("g.verify()", {}, {"g": g}, path)
@@ -766,7 +769,7 @@ def main():
         exit(2)
     profile = False
     generate_report_files = True
-    verify_repo(git_path, Path("./git-cli.stats"), Path(git_path).parent, Path(git_path).parent / "perf.csv")
+    verify_repo(git_path, Path("./git-cli.stats"), Path(git_path).parent, Path(git_path).parent / "perf.csv", True)
 
 if __name__ == "__main__":
     main()

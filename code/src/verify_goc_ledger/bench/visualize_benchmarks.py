@@ -27,9 +27,6 @@ def main():
     run_all_tests = False
     if len(specified_tests) == 0:
         run_all_tests = True
-    visualize_all_prefixes = False
-    if stat_prefix is None:
-        visualize_all_prefixes = True
     for test_dir in os.listdir(testcase_dir):
         if not run_all_tests:
             if test_dir not in specified_tests:
@@ -50,7 +47,7 @@ def main():
         file_prefixes: list[str] = []
         for file in glob.glob(str(test_dir_full/"*perf.csv")):
             file_prefix = file.removeprefix(str(test_dir_full/"")).removesuffix("perf.csv")[1:]
-            if not (visualize_all_prefixes or file_prefix in stat_prefix):
+            if not (stat_prefix is None or file_prefix in stat_prefix):
                 continue
             stat_dict = dict()
             benchmark_names = []
@@ -100,7 +97,7 @@ def main():
                 time = y=bottom[i] + val
                 ax.text(i, time, f"{time:.3}", fontdict=None, va='bottom', ha='center')
 
-            ax.set_title(test_dir)
+            ax.set_title(file_prefix)
             ax.set_xlabel("Number of Commits")
             ax.set_ylabel("Runtime (s)")
             ax.legend(loc="upper left")

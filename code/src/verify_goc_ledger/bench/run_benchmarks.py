@@ -10,10 +10,13 @@ def main():
     parser = argparse.ArgumentParser(prog="run_benchmarks", description="Runs Benchmarks")
     parser.add_argument("-p", "--stat-prefix", help="set prefix of profile output", default="")
     parser.add_argument("--profile", action=argparse.BooleanOptionalAction, help="profile output", default=False)
+    parser.add_argument("--summary-cache", action=argparse.BooleanOptionalAction, help="run using summary cache", default=True)
     parser.add_argument("benches", nargs="*", help="specify what benchmarks to run")
     args = parser.parse_args()
     profile_output: bool = args.profile
     stat_prefix = args.stat_prefix
+    summary_cache = args.summary_cache
+    print(f"summary_cache: {summary_cache}")
     specified_tests = args.benches
     run_all_tests = False
     if len(specified_tests) == 0:
@@ -37,9 +40,9 @@ def main():
             print(f"running {e}")
             # Run benchmark
             if profile_output:
-                new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"))
+                new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache)
             else:
-                new_row = verify_repo(str(test_dir_full / e), None, None, test_dir_full / (stat_prefix + e + ".csv"))
+                new_row = verify_repo(str(test_dir_full / e), None, None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache)
             assert new_row is not None
             new_row["NAME"] = e
             for fieldname in new_row:
