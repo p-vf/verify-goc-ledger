@@ -72,6 +72,8 @@ class GitCliGocVerifier:
         self.valid_commits: set[bytes] = set()
         self.invalid_commits: set[bytes] = set()
         self.valid_commit_frontier: dict[bytes, bytes] = dict()
+        self.summary_cache: dict[bytes, Summary] = dict()
+        self._summary_cache_hits: int = 0
 
         self.perf_statistics = PerfStatistics(enable_perf_stats)
 
@@ -109,9 +111,12 @@ class GitCliGocVerifier:
                 print(f"commit {commit} invalid: {res}")
                 self.invalid_commits.add(commit.id)
 
+            self.update_summary(commit, commit.author_name, self.summary_cache[commit.author_name])
 
-        print(f"valid frontier: {self.valid_commit_frontier}")
-        print(f"frontier: {frontier_set}")
+        print(f"summary_cache hits: {self._summary_cache_hits}")
+        print(f"summary_cache:\n{self.summary_cache}")
+        # print(f"valid frontier: {self.valid_commit_frontier}")
+        # print(f"frontier: {frontier_set}")
         for author in self.valid_commit_frontier:
             self.repo.update_ref(f"refs/heads/{author.decode()}/validated", self.valid_commit_frontier[author].decode())
         # for commit_id in frontier_set:
@@ -231,6 +236,7 @@ class GitCliGocVerifier:
             # d5
             if a_old and a.created == a.destroyed == 0 and not a.given and not a.acked:
                 return ["empty non-first account message"]
+
         return []
 
     def get_msg_type(self, commit: Commit) -> MessageType:
@@ -390,39 +396,24 @@ class GitCliGocVerifier:
         return res
 
     def recreate_summary(self, commit: Commit) -> Summary:
+        self.perf_statistics.start_timer("create summary")
         s = Summary(commit.author_name)
-        # TBD maybe use --first-parent to only include the relevant authors into the log!
-        # Except maybe when fork detection is necessary, then we need the other authors..
-        self.perf_statistics.start_timer("recreate summary")
+        not_commits = []
+        if commit.author_name in self.summary_cache and len(commit.parents) > 0:
+            t = self.summary_cache[commit.author_name]
+            front_commits = t.frontier[commit.author_name]
+            if commit.parents[0] in front_commits:
+                assert len(front_commits) == 1
+                self._summary_cache_hits += 1
+                s = t
+                not_commits = list(front_commits)
 
-        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(bytes.decode, commit.parents)))
+        relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(bytes.decode, commit.parents)), list(map(bytes.decode, not_commits)))
         for commit_id in relevant_commit_ids:
             n = self.get_commit(commit_id)
-            # if n.signature_status not in [b"U", b"G"]:
-            #     continue
-            if n.id in self.valid_commits:
-                if self.get_msg_type(n) == MessageType.DELTA_ACC:
-                    a, _ = self.get_delta_acc(n)
-                    assert isinstance(a, Account)
-                    if n.author_name == commit.author_name:
-                        s.account.merge(a)
-                    else:
-                        if commit.author_name in a.given:
-                            s.recieved[n.author_name] = max(s.recieved.get(n.author_name, 0), a.given[commit.author_name])
-                else:
-                    if n.author_name == commit.author_name:
-                        assert len(n.parents) > 1
-                        for msgid in n.parents[1:]:
-                            s.byz_acked.add(self.get_commit(msgid).author_name)
-            l: set[bytes] = set()
-            if n.author_name in s.frontier:
-                l = s.frontier[n.author_name]
-            if len(n.parents) > 0:
-                l.discard(n.parents[0])
-            l.add(n.id)
-            if n.id not in self.valid_commits or len(l) > 1:
-                s.byzantine.add(n.author_name)
-            s.frontier[n.author_name] = l
+            self.update_summary(n, commit.author_name, s)
+
+        self.summary_cache[commit.author_name] = s
 
         #####################
         # authors = set([self.get_commit(cid).author_name for cid in commit_ids])
@@ -447,8 +438,35 @@ class GitCliGocVerifier:
         #     commit = self.get_commit(commit_id)
         #     a, err = self.get_delta_acc(commit)
         #     self.update_frontier(a, frontier, commit)
-        self.perf_statistics.end_timer("recreate summary")
+        self.perf_statistics.end_timer("create summary")
         return s
+
+    def update_summary(self, n: Commit, m_author: bytes, s: Summary):
+        # if n.signature_status not in [b"U", b"G"]:
+        #     continue
+        if n.id in self.valid_commits:
+            if self.get_msg_type(n) == MessageType.DELTA_ACC:
+                a, _ = self.get_delta_acc(n)
+                assert isinstance(a, Account)
+                if n.author_name == m_author:
+                    s.account.merge(a)
+                else:
+                    if m_author in a.given:
+                        s.recieved[n.author_name] = max(s.recieved.get(n.author_name, 0), a.given[m_author])
+            else:
+                if n.author_name == m_author:
+                    assert len(n.parents) > 1
+                    for msgid in n.parents[1:]:
+                        s.byz_acked.add(self.get_commit(msgid).author_name)
+        l: set[bytes] = set()
+        if n.author_name in s.frontier:
+            l = s.frontier[n.author_name]
+        if len(n.parents) > 0:
+            l.discard(n.parents[0])
+        l.add(n.id)
+        if n.id not in self.valid_commits or len(l) > 1:
+            s.byzantine.add(n.author_name)
+        s.frontier[n.author_name] = l
 
     def update_frontier(self, account: Account | None, frontier: Frontier, last_message: Commit):
         # print(f"updating frontier {frontier} with {account}, {last_message}")

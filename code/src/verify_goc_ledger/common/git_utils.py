@@ -182,7 +182,6 @@ class Repo:
 
     def retrieve_ref_commits(self, refspec):
         res = run_cmd(f"git for-each-ref '--format=%(objectname)' {refspec}", self.git_path).splitlines()
-        print(f"retreived commits from refspec {refspec}:\n{res}")
         return res
 
     def is_reachable(self, commit: str, from_commits: Iterable[str]):
