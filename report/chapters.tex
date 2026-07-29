@@ -506,7 +506,7 @@ The simple invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\
 \var{M1} & $M_\emph{prev} \ne \bot \wedge M_\emph{prev} \notin F_\emph{valid}$\\ \hline
 \var{M2} & $M_\emph{prev} \neq \bot \wedge (C_\emph{msg}[M_\emph{prev}])_\emph{author} \ne M_\emph{author}$\\ \hline
 \multirow{2}{*}{\var{M3}} & $M_\emph{deps} \not\subseteq F_\emph{valid} \land \msgType(M) = \var{ACCOUNT}$ \\
-& $\ \lor M_\emph{deps} \not\subseteq \{\msgId(M) \mid M \in \mathcal M\}$ \\ \hline
+& $\ \lor M_\emph{deps} \not\subseteq (C_\emph{msg})_*$ \\ \hline
 \var{M4} & see Algorithm \ref{alg:m4}\\ \hline
 \var{M5} & $\lnot\Call{Signed}{M}$\\ \hline
 \var{M6} & never, because message graph is cryptographic hash-graph \\ \hline
@@ -752,20 +752,7 @@ To check \var{d3} (see Algorithm~\ref{alg:d3}), we must go through the authors t
 % Now the only invariants left to check are $\delta2$, \var{M7} and \var{F1}.\todo{write justification on why we need to compute the frontier}
 
 \chapter{Implementation}
-We implement the verification algorithm in Python. We made this choice because Python is ported to many platforms and because its integer implementation allows for arbitrarily large numbers.
-
-\section{Git Repository as Ledger}
-\begin{figure}[h!]
-    \dirtree{%
-    .1 refs/.
-    .2 heads/.
-    .3 <author-id>/.
-    .4 last.
-    .4 verified.
-    .3 ....
-    }
-    \caption{References directory in Git repository.}
-\end{figure}
+We implemented the verification algorithm in Python. We made this choice because Python is ported to many platforms and because its integer implementation allows for arbitrarily large numbers.
 
 \subsection{Encoding Messages as Git Commits}
 \label{sec:payload-syntax}
@@ -788,16 +775,29 @@ We implement the verification algorithm in Python. We made this choice because P
 
 The encoding of a message $M$ as a Git commit can be seen in table \ref{tab:msg-encoded-as-commit}. Now we specify further what $M_\emph{payload}$ must look like.
 
-If the message represents a byzantine acknowledgement, the payload only contains a single space character (because git doesn't allow empty commit messages which we would have picked if this wasn't the case).
-If the message represents delta account $A^\delta$, the payload contains a string that represents a json object, where the members representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The members ``c'' and ``d'' are just numbers representing their GOCs and the members ``a'' and ``g'' are nested json objects that contain a member for each author which is mapped to a GOC. If a field does not hold a value (meaning it is either equal to $0$ or $\emptyset$), the respective name in the json object isn't specified. \todo{add example here}
+If the message represents a byzantine acknowledgement, the payload must be empty.
+If the message represents delta account $A^\delta$, the payload contains an object encoded in the json format \cite{json}, where the values representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The the values of ``c'' and ``d'' are positive numbers representing their GOCs and the values of ``a'' and ``g'' must be non-empty json objects that contains a member (name/value pair) for each author where the name is the author identifier and the value a positive number representing the corresponding GOC.
 
-The serialized json object must not contain any newlines, as we retrieve the message content using the subject of the message (format placeholder \texttt{\%s} in git) which is newline delimited \footnote{This can be seen by looking at the source code of git, see \url{https://github.com/git/git/blob/d35c5399e3e54ac277bb391fc2f6be3e816d312b/pretty.c\#L1763}. If you follow the function definition, you see that \texttt{get\_one\_line} gets called to set the size of the string that is read, which gets the length until the first newline character.}. This means however that an adversary might put arbitrary data after a newline, which allows commit messages to be arbitrarily large, so we also have to check that the commit message size matches the size that we got. Currently, this check is not done, as there is no format placeholder that contains this information \cite{gitPrettyformatsDocumentation}.
+The serialized json object must not contain any newlines, as we retrieve the message content using the subject of the message (format placeholder \texttt{\%s} in git) which is newline delimited \cite{git-subject-line}. This means however that an adversary might put arbitrary data after a newline, which allows commit messages to be arbitrarily large, so we also have to check that the commit message size matches the size that we got. Currently, this check is not done, as there is no format placeholder that contains this information \cite{gitPrettyformatsDocumentation}.
 
-Additionally, we need to check that referenced objects actually exist, but this can probably be ensured during the replication of commit messages and is therefore not handled by our implementation of the verification algorithm.
+
+\section{Structure of Git Repository}
+
+\begin{figure}[h!]
+    \dirtree{%
+    .1 refs/.
+    .2 heads/.
+    .3 <author-id>/.
+    .4 last.
+    .4 verified.
+    .3 ....
+    }
+    \caption{References directory in Git repository.}
+\end{figure}
 
 \section{Verification Algorithm}
 \label{sec:impl-verification-alg}
-To retrieve messages in a reverse topological order, we use the command \texttt{git log} with the flags \texttt{--reverse} and \texttt{--topo-order} and, using format placeholders, we retrieve the relevant fields (see table \ref{tab:git-format-placeholders}). The commits are cached in a dictionary.
+To retrieve messages in a reverse topological order, we use the command \texttt{git log} with the flags \texttt{--reverse} and \texttt{--topo-order} and, using format placeholders, we retrieve the relevant fields (see table \ref{tab:git-format-placeholders}). The commits and corresponding delta accounts are cached in a dictionary.
 
 \begin{table}[ht]
     \centering
@@ -817,8 +817,11 @@ To retrieve messages in a reverse topological order, we use the command \texttt{
     \label{tab:git-format-placeholders}
 \end{table}
 
-Now instead of always recreating the frontier from scratch, we implemented an optimization that uses cached frontiers to reuse part of the already computed data. This is done by storing the last frontier computed for each author and when trying to compute the frontier of a new message, checking if one of the immediate dependencies is in the frontier cache. If this is the case, we only have to traverse up to the last commits in this frontier and replay only the messages between the new message and the chached frontier. If \texttt{<f1>}, ..., \texttt{<fn>} represent the commit ids in the cached frontier, and \texttt{<new-msg>} represents the newly added commit message, we can compute the new frontier by traversing the commit messages with the git-cli command \texttt{git rev-list --reverse --topo-order <new-msg> \^{}<f1> ... \^{}<fn>} and applying the changes to the cached frontier.
-The impact of this optimization can be seen in the result section \todo{add this in the evaluation section}
+Now instead of always recreating the summary from scratch, we implemented an optimization that uses a mapping from authors to a modified version of their last summaries to reuse part of the already computed data. Let $S = \textsc{CreateSummary}(M)$ where $M$ is a message, then we compute the modified summary $S'$ that gets added to the cache by adding $M$ to the summary in the same way that the individual messages in the loop of \textsc{CreateSummary} get added. This message is then part of the message frontier, i.e. $\msgId(M) \in S'_\emph{frontier}[M_\emph{author}]$.
+
+The summaries in the summary cache can then be used to compute $\textsc{CreateSummary}(M')$, where $M'$ is a message, more efficiently, if the modified summary $S'$ in the cache corresponding to author $M'_\emph{author}$ has $S'_\emph{frontier}[M'_\emph{author}] = \{M'_\emph{prev}\}$. This is the case if the previously visited message of author $M'_\emph{author}$ corresponds to $M'_\emph{prev}$ and $M'_\emph{author}$ did not acknowledge a fork of their own.
+
+Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only traversing the messages that come after all of the messages in $S'_\emph{frontier}$. The command to retrieve these messages in git is \texttt{git log <m>\^{} \^{}<f1> \^{}<f2> ... \^{}<fn>}, where \texttt{<fi>} represent the message ids in $S'_\emph{frontier}$ and \texttt{<m>} represents $\msgId(M')$.  The impact of this optimization can be seen in the Section~\ref{sec:results}.
 
 % \section{Proposal of Extension to 2P-BFT-Log}
 % \todo{explain how the arcs in the diagrams map to \_prev and \_deps}
@@ -849,13 +852,15 @@ The impact of this optimization can be seen in the result section \todo{add this
 % \end{figure}
 % Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e.
 
+\section{A Note on Signature Verification}
+Since there is no way to get the raw signature body of a commit using a format specifier, we also don't check the signature correctly. We can only check that a signature is valid, but not that $M_\emph{author}$ is the creator of $M_\emph{signature}$, which makes this check useless.
 
-
+To remedy this, one could use the option \texttt{--format=raw} when logging the commits using the Git CLI, which prints the raw commit info which also includes the commit message.
 
 \chapter{Evaluation}
 When evaluating our design, we focused on two metrics. The first was performance of the verification algorithm and the second was efficiency of storage.
-Concerning performance, there are two things we are interested in: how is the scaling behaviour as we increase the number of messages we verify? and how do different optimizations affect the runtime?
-Concerning storage, we compare how much less storage our design uses by storing account data in the message of a commit compared to storing the data in the tree and blob objects as in the delta-GOC-Ledger by Heisch \cite{delta-goc-ledger-heisch}.
+Concerning performance, there are two things we are interested in: how is the scaling behaviour as we increase the number of messages we verify? and how does the optimization mentioned in Section~\ref{sec:impl-verification-alg} affect the runtime?
+Concerning storage, we compare how much less storage on the hard disk our design uses by storing account data in the message of a commit compared to storing the data in the tree and blob objects as in the delta-GOC-Ledger by Heisch \cite{delta-goc-ledger-heisch}.
 
 \section{Methodology}
 \subsection{Generating baseline Repository}
@@ -873,7 +878,7 @@ We split the code into various non-overlapping sections. Each section should eit
 \subsection{Storage Bench: Comparison of storage methods}
 We take the simulation described in section \ref{sec:base-repo} and use it to create repositories with the same encoded transactions and the number of messages being 1000. The only difference between them is how the messages are stored and how many dependencies each message has.
 
-In Method 1, the account data is stored as described in \ref{sec:syntax-of-msgs}. In Method 2, the account data is stored as nested tree and blob objects, as described in \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects and GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively). \todo{if necessary: add figure that shows example of this visually.}
+In Method 1, the account data is stored as described in \ref{sec:syntax-of-msgs}. In Method 2, the account data is stored as nested tree and blob objects, as described by Heisch \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects and GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively).
 
 The number of dependencies is also varied. If we write ``with unnecessary dependencies'' we mean that a message stores a reference for each other author pointing to the last known message that the creator knew about, as opposed to just the last messages of the authors that appear in the transaction.
 
@@ -897,6 +902,7 @@ One important thing to note when using WSL2 as a virtual machine is that the per
 \end{table}
 
 \section{Results}
+\label{sec:results}
 \subsection{Performance of Verification Algorithm on baseline repository}
 \begin{figure}
     \centering
@@ -916,13 +922,14 @@ When measuring the size of the generated git repositories, we get the result sho
 
 We also see that the difference in effective space used doesn't change meaningfully when storing unnecessary dependencies in either case.
 \begin{table}
-    \begin{tabular}{|p{5cm}|l|l|}
+    \begin{tabular}{|l|l|l|l|l|l|}
         \hline
-        \textbf{Method} & \textbf{Size on Disk} & \textbf{Apparent size}\\ \hline
-        Method 1 with unnecessary dependencies & 18916 Kb & 1927 Kb\\\hline
-        Method 1 & 18916 Kb & 1754 Kb\\ \hline
-        Method 2 with unnecessary dependencies & 5428 Kb & 875 Kb\\ \hline
-        Method 2 (ours) & 5424 Kb & 699 Kb\\ \hline
+        \multicolumn{2}{|c|}{\textbf{Method}} & \multicolumn{2}{|c|}{\textbf{Real Size}} & \multicolumn{2}{|c|}{\textbf{Apparent Size}} \\ \hline
+        \textbf{Encoding} & \textbf{Unnecessary Dependencies} & \textbf{Compressed} & \textbf{Uncompressed} &\textbf{Compressed} & \textbf{Uncompressed} \\ \hline
+        Tree              & Yes                               & 2268                & 23228                 & 1300               &7907  \\ \hline
+        Tree              & No                                & 2044                & 21392                 & 1079               &6114  \\ \hline
+        Message           & Yes                               & 1860                & 8624                  & 896                &2483  \\ \hline
+        Message           & No                                & 1572                & 6772                  & 617                &673   \\ \hline
     \end{tabular}
     \caption{Result of storage benchmark}
     \label{tab:storage-res}

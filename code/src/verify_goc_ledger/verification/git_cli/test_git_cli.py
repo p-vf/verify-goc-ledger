@@ -149,8 +149,8 @@ class GitCliGocVerifier:
                 if not self.check_if_already_verified(m.parents[1:]):
                     return ["immediate dependencies of account message not valid"]
             else:
-                # TODO check if parents of m exist
-                pass
+                if not set(m.parents) <= set(self._commit_cache):
+                    return ["there are dependencies that don't exist"]
 
             # M4
             for msgid in m.parents[1:]:
