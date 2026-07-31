@@ -31,7 +31,7 @@ from common.datastructures import Commit
 
 commit_format = "%H:%T:%P:%an:%ae:%at:%cn:%ce:%ct:%G?:%s"
 num_fields = len(commit_format.split(":"))
-def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
+def parse_commit(c: bytes, repo: Repo) -> tuple[Commit | None, str | None]:
     fields = c.split(b":", num_fields - 1)
     id = fields[0]
     tree = fields[1]
@@ -48,8 +48,38 @@ def parse_commit(c: bytes) -> tuple[Commit | None, str | None]:
        author_date  != committer_date:
         return None, "author and committer not consistent"
     signature_status = fields[9]
+
     body = fields[10]
     return Commit(id, tree, parents, author_name, author_email, author_date, signature_status, body), None
+
+_beginsshsig = b"-----BEGIN SSH SIGNATURE-----"
+_endsshsig = b"-----END SSH SIGNATURE-----"
+def check_signature(m: Commit, repo: Repo):
+    if m.signature_status not in [b"G", b"U"]:
+        m.signature_valid = False
+        return f"signature status {m.signature_status!r} does not match \"G\" or \"U\""
+    else:
+        cmd = ["git", "show", "--format=raw", "--no-patch", m.id.decode()]
+        raw = run_cmd(cmd, cwd=repo.git_path)
+
+        start_idx = raw.find(_beginsshsig)
+        end_idx = raw.find(_endsshsig)
+
+        if not start_idx > 0 and end_idx > 0 and end_idx > start_idx:
+            return f"commit does not contain a well formed signature: {raw}"
+
+        # "For ed25519 the 'blob' data in binary is (always) 51 bytes: a 4-byte
+        # length, a 11-byte string containing (again) the algorithm name,
+        # another 4-byte length, and a 32-byte value which is the actual
+        # publickey value. 51 bytes is base64-encoded to 68 chars (exactly)."
+        # Source: https://crypto.stackexchange.com/questions/87715/what-is-the-public-key-length-of-rsa-and-ed25519
+        blob = b''.join(raw[start_idx + len(_beginsshsig):end_idx].split())
+        blob_d = base64.b64decode(blob)
+        pk = base64.b64encode(blob_d[14:65])
+        if pk != m.author_name:
+            return f"the author and the signer don't match. author: {m.author_name}, signer: {pk}"
+
+    return ""
 
 class Summary:
     def __init__(self, author: bytes):
@@ -95,7 +125,7 @@ class GitCliGocVerifier:
         for c in commits:
             if len(c) == 0: # this happens at the end of the output for some reason
                 continue
-            commit, err = parse_commit(c)
+            commit, err = parse_commit(c, self.repo)
             commit_id = c.split(b":", 1)[0]
             frontier_set.add(commit_id)
             if err or commit is None:
@@ -112,7 +142,7 @@ class GitCliGocVerifier:
                 print(f"commit {commit} invalid: {res}")
                 self.invalid_commits.add(commit.id)
 
-            if self.enable_summary_cache:
+            if self.enable_summary_cache and commit.signature_valid:
                 self.update_summary(commit, commit.author_name, self.summary_cache[commit.author_name])
 
         print(f"summary_cache hits: {self._summary_cache_hits}")
@@ -136,6 +166,14 @@ class GitCliGocVerifier:
         res = []
 
         authors: dict[bytes, set[bytes]] = dict()
+
+        # M5
+        self.perf_statistics.start_timer("signature check")
+        err = check_signature(m, self.repo)
+        self.perf_statistics.end_timer("signature check")
+        if err:
+            return [f"signature not valid: {err}"]
+        m.signature_valid = True
 
         if len(m.parents) > 0:
             # M1
@@ -163,11 +201,6 @@ class GitCliGocVerifier:
                 if author not in authors:
                     authors[author] = set()
                 authors[author].add(msgid)
-
-        # M5
-        # TODO check signature here
-        # if m.signature_status not in [b"U", b"G"]:
-        #     return ["signature of message not valid"]
 
         if len(m.parents) > 0:
             # M7, F1, F2, F3'
@@ -398,7 +431,7 @@ class GitCliGocVerifier:
         return res
 
     def recreate_summary(self, commit: Commit) -> Summary:
-        self.perf_statistics.start_timer("create summary")
+        self.perf_statistics.start_timer("summary creation")
         s = Summary(commit.author_name)
         not_commits = []
         if self.enable_summary_cache:
@@ -414,6 +447,9 @@ class GitCliGocVerifier:
         relevant_commit_ids = self.repo.retrieve_reachable_commits_reverse_topo_order(list(map(bytes.decode, commit.parents)), list(map(bytes.decode, not_commits)))
         for commit_id in relevant_commit_ids:
             n = self.get_commit(commit_id)
+            assert n.signature_valid is not None
+            if not n.signature_valid:
+                continue
             self.update_summary(n, commit.author_name, s)
 
         self.summary_cache[commit.author_name] = s
@@ -441,7 +477,7 @@ class GitCliGocVerifier:
         #     commit = self.get_commit(commit_id)
         #     a, err = self.get_delta_acc(commit)
         #     self.update_frontier(a, frontier, commit)
-        self.perf_statistics.end_timer("create summary")
+        self.perf_statistics.end_timer("summary creation")
         return s
 
     def update_summary(self, n: Commit, m_author: bytes, s: Summary):
@@ -533,7 +569,7 @@ class GitCliGocVerifier:
             self.commit_cache_hits += 1
             return self._commit_cache[oid]
         # TODO invalid commits should be handled here
-        c, _ = parse_commit(self.repo.retrieve_single_commit(oid.decode()))
+        c, _ = parse_commit(self.repo.retrieve_single_commit(oid.decode()), self.repo)
         if c is None:
             raise Exception(f"Commit {oid.decode()} invalid")
         self._commit_cache[oid] = c

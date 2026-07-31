@@ -13,6 +13,7 @@ class Commit:
         self.author_email: bytes = author_email
         self.author_date: bytes = author_date
         self.signature_status: bytes = signature_status
+        self.signature_valid: bool | None = None # will be filled when signature is checked
         self.body: bytes = body
 
     def __eq__(self, other):

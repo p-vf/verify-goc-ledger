@@ -24,11 +24,14 @@ def main():
         print(test_dir_full)
         assert os.path.isdir(test_dir_full)
         print(f"running testcase '{test_dir}':")
+        for e in os.listdir(test_dir_full):
+            if not e.startswith("expected_") and os.path.isfile(test_dir_full/e):
+                os.remove(test_dir_full/e)
         try:
             for e in os.listdir(test_dir_full):
-                if os.path.isdir(e):
+                if os.path.isdir(test_dir_full/e):
                     # Run testcase
-                    verify_repo(str(test_dir_full / e), None, test_dir_full, None)
+                    verify_repo(str(test_dir_full / e), None, test_dir_full, None, True)
         except Exception as e:
             import traceback
             print(f"exception raised: \n{bcolors.FAIL + str.join("", traceback.format_tb(e.__traceback__)) + bcolors.ENDC}")
