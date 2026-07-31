@@ -72,12 +72,12 @@ Additionally, the author-specific happens-before relationship is defined as
 \end{equation}
 
 
-Based on the happens-before relationship, the partial order on messages ($\le_\mathcal{M}$) is defined:\todo{is this relevant for my report?}
+Based on the happens-before relationship, the partial order on messages ($\le_\mathcal{M}$) is defined:
 \[
     M \le_\mathcal{M} M' \definedas M = M' \lor M \rightsquigarrow M'
 \]
 
-If neither $M$ or $M'$ is smaller than the other, they are called concurrent ($\parallel_\mathcal{M}$). \todo{is this relevant for my report?}
+If neither $M$ or $M'$ is smaller than the other, they are called concurrent ($\parallel_\mathcal{M}$).
 \[
     M \parallel_\mathcal{M} M' \definedas M {\nleq_\mathcal{M}} M' \land M' {\nleq_\mathcal{M}} M
 \]
@@ -97,16 +97,13 @@ If $S$ is a set of messages, the (strict) causal history of $S$ is overloaded an
 \]
 
 
-\subsection{Logs} \todo{this might be unnecessary}
-A log in the context of 2P-BFT-Log is defined as a datastructure that keeps track of the state of the application. Log $L$ has the fields $L_\emph{author}$, $L_\emph{last}$ which contains the last message of this author and $L_\emph{forks}$ which contains the oldest known fork proof of this author. \todo{if necessary add more description here}
-
 \section{\(\delta\)-GOC-Ledger}
 
 The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how many tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors form the state of the ledger. More concretely, a ledger $L$ is a mapping from authors to their corresponding account.
 
 In the case of the GOC-Ledger, this is realized by introducing 5 fields: $A_\emph{author}$ which is the author of this account, $A_\uparrow$ and $A_\downarrow$ which represent the number of created/destroyed tokens respectively, $A_\rightarrow$ and $A_\leftarrow$ which represent the number of given/received tokens respectively. $A_\uparrow$ and $A_\downarrow$ are simple grow-only counters whereas $A_\rightarrow$ and $A_\leftarrow$ are mappings from author names to grow-only counters, which represent the number of tokens $A_\emph{author}$ has given to or acknowledged from the other author respectively.
 
-For ease of writing, the notation $S_*$ is defined to be the domain of definition of a mapping $S$. E.g. if $L$ is a ledger, $L_*$ denotes the set of authors that have an account in this ledger. \todo{where should I put this definition?}
+For ease of writing, the notation $S_*$ is defined to be the domain of definition of a mapping $S$. E.g. if $L$ is a ledger, $L_*$ denotes the set of authors that have an account in this ledger.
 
 To get the balance of an account, we can compute \[\balance(A) \definedas A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\].
 Additionally there is a merge operation with which accounts can be merged. This merge function is only defined on accounts of the same author and returns the account that contains the maximal values of all the grow only counters in both of the accounts and adds all the grow-only counters that are only in one of the two accounts. I.e. for accounts $A$ and $B$, the merged account $C = A \sqcup B$ is defined as:
@@ -143,8 +140,6 @@ To store the state of the ledger more efficiently with regards to space, only th
 \chapter{Design}
 
 \section{Definitions}
-\todo{add description of the used notation here}
-\todo{introduce induced frontier}
 
 $\textsc{Signed}$ of message $M$ is the predicate that is true iff $M_\emph{signature}$ is a valid signature belonging to $M_\emph{author}$.
 
@@ -220,13 +215,13 @@ Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was
     L_\emph{before} = \bigsqcup_{M' \in H_\emph{acc}} \acc(M')
     \label{eqn:l-before-def}
 \end{equation}
-where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT} \land \var{valid}(M')\}$ is the set of all delta accounts in the strict causal history of $M$ and the neutral element of $\bigsqcup$ is the empty ledger. \todo{write this differently, possibly add this to definition section}
+where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT} \land \var{valid}(M')\}$ is the set of all delta accounts in the strict causal history of $M$.
 
 Since we merge account states no matter if the corresponding authors exhibited byzantine behaviour, this means that double spending is not prevented nor handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue but is outside the scope of this project.
 
 For this project, we assume that the predicate \var{valid} may depend on messages in the causal history from known equivocators to avoid negative balance in valid account messages. This is in contrast to the design described in the Blocklace paper, where the valid predicate may only depend on messages in the causal history from authors that don't exhibit byzantine behaviour. This means that if the balance of an account is negative, this can only have been caused by either a) the author overspending tokens or b) there being a fork in the causal history of the same account, where the double spending happened. In case a) the message is invalid and in case b) the message can also be viewed as invalid, because it is guaranteed to be created by a byzantine process, which means no message $M$ with $\msgType(M) = \var{ACCOUNT}$ should ever reference it anyway. So in either case, a negative balance invalidates a message.
 
-$L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$, so $L_\emph{after} = L_\emph{before} \sqcup \deltacc{A}$. \todo{write $A_\emph{old}$ instead of $L_\emph{before}$ where appropriate}
+$L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$, so $L_\emph{after} = L_\emph{before} \sqcup \deltacc{A}$.
 
 Further, let $A^\delta = \acc(M)$ be the delta account stored in $M$.
 
@@ -643,7 +638,7 @@ As before, many invariant checks are simple if-conditions, which are re-expresse
 \caption{Invariants expressed in terms of $A_\emph{old}$, $\deltacc{A}$, $A_\emph{new}$, $C_\emph{msg}$ and $M$}
 \label{tab:invariant-code-delta}
 \end{table}
-\todo{adjust invariant check to handle missing $A_\emph{old}$}
+
 
 
 \begin{algorithm}[ht]
@@ -750,7 +745,7 @@ To check \var{d3} (see Algorithm~\ref{alg:d3}), we must go through the authors t
 % Invariants $\delta1$, $\delta4$, $\delta5$, \var{M6} are straightforward to check, as they only involve data stored in the message in question.
 % To check invariants $\delta3$, $\delta6$, $\delta7$, $\delta8$, \var{M1}, \var{M2}, \var{M3}, \var{M4}, only the immediate predecessors of $M$ ($M_\emph{prev}$ and $M_\emph{deps}$) have to be dereferenced, which can be done efficiently by storing a mapping $C_\emph{msg}$ for which $C_\emph{msg}[\var{msgId}] = M$ where $\msgId(M) = \var{msgId}$. This $C_\emph{msg}$ is updated whenever a message gets visited. So the invariants mentioned so far should not cause further trouble.
 
-% Now the only invariants left to check are $\delta2$, \var{M7} and \var{F1}.\todo{write justification on why we need to compute the frontier}
+% Now the only invariants left to check are $\delta2$, \var{M7} and \var{F1}.
 
 \chapter{Implementation}
 We implemented the verification algorithm in Python. We made this choice because Python is ported to many platforms and because its integer implementation allows for arbitrarily large numbers.
@@ -928,7 +923,7 @@ One important thing to note when using WSL2 as a virtual machine is that the per
     \caption{Performance measurements on baseline repository with and without the summary cache optimization}
     \label{fig:perf-result}
 \end{figure}
-\todo{add benchmark result without frontier caching optimization}
+
 The results of the performance benchmark done on the baseline repository are shown in figure \ref{fig:perf-result}. The sections corresponding to ``commit retrieval'', ``signature check'', ``summary creation'' and ``remaining'' are the total time spent checking the signatures of commits, retrieving all the commits initially, creating the summary and the remaining time not measured by any of the other ones, respectively. Most of the remaining time will be taken up by checking the invariants given the summary data structure.
 If we take a look at the verification algorithm without the summary cache optimization, we see that the total running time (top of the bars) increases more than proportionally with respect to the number of commits. The section that is responsible for this scaling is mostly ``create summary''. However if we take a look at the graph with the summary cache optimization, we see that ``create summary'' is no longer that big of a part of the total runtime and increases less quickly.
 
