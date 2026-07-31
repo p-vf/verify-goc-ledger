@@ -776,23 +776,27 @@ We implemented the verification algorithm in Python. We made this choice because
 The encoding of a message $M$ as a Git commit can be seen in table \ref{tab:msg-encoded-as-commit}. Now we specify further what $M_\emph{payload}$ must look like.
 
 If the message represents a byzantine acknowledgement, the payload must be empty.
-If the message represents delta account $A^\delta$, the payload contains an object encoded in the json format \cite{json}, where the values representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The the values of ``c'' and ``d'' are positive numbers representing their GOCs and the values of ``a'' and ``g'' must be non-empty json objects that contains a member (name/value pair) for each author where the name is the author identifier and the value a positive number representing the corresponding GOC.
+If the message represents delta account $A^\delta$, the payload contains an object encoded in the json format \cite{json}, where the values representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The values of ``c'' and ``d'' are positive numbers representing their GOCs and the values of ``a'' and ``g'' must be non-empty json objects that contains a member (name/value pair) for each author where the name is the author identifier and the value a positive number representing the corresponding GOC.
 
-The serialized json object must not contain any newlines, as we retrieve the message content using the subject of the message (format placeholder \texttt{\%s} in git) which is newline delimited \cite{git-subject-line}. This means however that an adversary might put arbitrary data after a newline, which allows commit messages to be arbitrarily large, so we also have to check that the commit message size matches the size that we got. Currently, this check is not done, as there is no format placeholder that contains this information \cite{gitPrettyformatsDocumentation}.
+The serialized json object must not contain any newlines, as we retrieve the message content using the subject of the message (format placeholder \texttt{\%s} in git) which is newline delimited \cite{git-subject-line}.
 
 
 \section{Structure of Git Repository}
+The structure of the git repository that contains the data after verification is shown in Figure~\ref{fig:repo-structure}. Each invalid commit is referenced by the reference \texttt{invalid/<commit-id>} where \texttt{<commit-id>} is the invalid commit. Additionally, we store for each author the maximal commit that was checked by the verification algorithm in the reference \texttt{<author-id>/validated}, where \texttt{<author-id>} represents the identity of the author. Since we use ssh public keys as author identities, there may be sequences like ``\texttt{//}'' in these author identities which are not allowed as part of the references by git, so we actually use the author identities encoded as base64 strings.
 
 \begin{figure}[h!]
     \dirtree{%
     .1 refs/.
     .2 heads/.
+    .3 invalid/.
+    .4 <commit-id>.
+    .4 ....
     .3 <author-id>/.
-    .4 last.
-    .4 verified.
+    .4 validated.
     .3 ....
     }
     \caption{References directory in Git repository.}
+    \label{fig:repo-structure}
 \end{figure}
 
 \section{Verification Algorithm}
@@ -816,6 +820,8 @@ To retrieve messages in a reverse topological order, we use the command \texttt{
     \caption{Relevant format placeholders used with Git, in \texttt{--format} option.}
     \label{tab:git-format-placeholders}
 \end{table}
+
+\subsection{Summary Cache}
 
 Now instead of always recreating the summary from scratch, we implemented an optimization that uses a mapping from authors to a modified version of their last summaries to reuse part of the already computed data. Let $S = \textsc{CreateSummary}(M)$ where $M$ is a message, then we compute the modified summary $S'$ that gets added to the cache by adding $M$ to the summary in the same way that the individual messages in the loop of \textsc{CreateSummary} get added. This message is then part of the message frontier, i.e. $\msgId(M) \in S'_\emph{frontier}[M_\emph{author}]$.
 
@@ -973,7 +979,12 @@ However the tree encoding gets compressed more effectively than the message enco
 The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken directly from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the Paper of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we partly specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
 
 \chapter{Conclusion}
-In this report, we explored how a verification algorithm of byzantine fault tolerant logs might look like. There is, however a lot that still has to be done; first of all, the problem of double spending still persists and has to be solved by designing a system that prevents correct replicas from losing tokens or tokens being created out of thin air. Additionally, the verification algorithm still has to be extended to include invariant F4, which should guarantee byzantine repellance, as defined in the Blocklace paper \cite{blocklace-crdt}.
-The implementation of the verification algorithm can still be improved significantly by avoiding the subprocess-calls when recreating the frontier.
-Furthermore, our implementation never clears commits out of the cache, because it always relies on them being present.
-Our implementation is also memory bound. In order for the verification to be feasible, an incremental system would have to be developed, where memory can be offloaded to persistent storage efficiently.
+In this report, we specified new invariants that need to be considered when implementing the $\delta$-GOC-Ledger over such a byzantine fault tolerant log and how they interact. We then specified and implemented an algorithm that verifies these invariants. Additionally, we implemented an optimization that reduced the rate of increase of the running time with respect to the number of commits significantly. We also adapted the encoding of the account data in commit objects from the originally proposed design of Heisch and were able to achieve about a 70\% reduction in storage space when uncompressed and about a reduction of 30\% when compressed, while also being easier to retrieve using the Git CLI.
+
+\section{Future Work}
+Considering the design of the algorithm, there are some things to be done; the verification algorithm still has to be extended to include invariant \var{F4}, which we argue should guarantee byzantine repellance, as defined in the Blocklace paper \cite{blocklace-crdt}. Furthermore, the design of our algorithm is not proven to verify the mentioned invariants.
+Additionally, we have to keep track of an increasing amount of state as more commits get verified (for example $C_\emph{msg}$ and $F_\emph{valid}$). This could be solved by using some sort of reference counting technique to drop the entries in these sets that don't get referenced by new commits.
+
+Considering the implementation of the algorithm, we think the creation of the summary can be improved by a lot if the commit traversal ran in the same process as the verification algorithm, rather than calling the Git CLI through the subprocess module. This is possible, because at the time of creating a summary, we have all the data that is needed to traverse the commit graph in $C_\emph{msg}$.
+
+Considering the design of the invariants, the problem of double spending still persists and has to be solved by designing a system that prevents correct replicas from losing tokens or tokens being created out of thin air.
