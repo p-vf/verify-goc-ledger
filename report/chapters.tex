@@ -852,10 +852,10 @@ Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only
 % \end{figure}
 % Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e.
 
-\section{A Note on Signature Verification}
-Since there is no way to get the raw signature body of a commit using a format specifier, we also don't check the signature correctly. We can only check that a signature is valid, but not that $M_\emph{author}$ is the creator of $M_\emph{signature}$, which makes this check useless.
+\section{Signature Verification}
+As far as we know, there is no way to get the signer of a commit using a format placeholder in the Git CLI. We can only check that a signature is valid, but not that $M_\emph{author}$ is the creator of $M_\emph{signature}$, which makes this check alone useless. To remedy this, we run the \texttt{git show} command for each commit that has a valid signature (based on the signature validity retrieved with the format placeholder \texttt{\%G?}) with the \texttt{--format=raw} option, which prints the raw commit info including the base64 encoding of the signature, from which we can extract the signer and check that it matches $M_\emph{author}$.
 
-To remedy this, one could use the option \texttt{--format=raw} when logging the commits using the Git CLI, which prints the raw commit info which also includes the commit message.
+\todo{add git command summary}
 
 \chapter{Evaluation}
 When evaluating our design, we focused on two metrics. The first was performance of the verification algorithm and the second was efficiency of storage.
@@ -919,13 +919,13 @@ One important thing to note when using WSL2 as a virtual machine is that the per
     \label{fig:perf-result}
 \end{figure}
 \todo{add benchmark result without frontier caching optimization}
-The results of the performance benchmark done on the baseline repository are shown in figure \ref{fig:perf-result}. The sections corresponding to ``create summary'', ``commits retrieval'' and ``remaining'' are the total time spent creating the summaries, retrieving all the commits initially and the remaining time not measured by either of the other ones respectively. Most of the remaining time will be taken up by checking the invariants given the summary data structure.
-If we take a look at the verification algorithm without the summary cache optimization, we see that the total running time (top of the bars) increases more than proportionally with respect to the number of commits. The section that is responsible for this scaling is mostly ``create summary''. However if we take a look at the graph with the summary cache optimization, we see that ``create summary'' is no longer that big of a part of the total runtime and scales less quickly.
+The results of the performance benchmark done on the baseline repository are shown in figure \ref{fig:perf-result}. The sections corresponding to ``commit retrieval'', ``signature check'', ``summary creation'' and ``remaining'' are the total time spent checking the signatures of commits, retrieving all the commits initially, creating the summary and the remaining time not measured by any of the other ones, respectively. Most of the remaining time will be taken up by checking the invariants given the summary data structure.
+If we take a look at the verification algorithm without the summary cache optimization, we see that the total running time (top of the bars) increases more than proportionally with respect to the number of commits. The section that is responsible for this scaling is mostly ``create summary''. However if we take a look at the graph with the summary cache optimization, we see that ``create summary'' is no longer that big of a part of the total runtime and increases less quickly.
 
 \subsubsection{Discussion}
-The reason ``create summary'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the summary, which happens for each commit, even with the summary cache optimization.
+The reason ``summary creation'' is the biggest part of the time besides ``commit retrieval'', is because we use subprocesses to recreate the summary, which happens for each commit, even with the summary cache optimization.
 
-If we take a look at the graph without the summary cache optimization, we see that the label ``create summary'' scales quite quickly. This is because for each commit we recreate the summary from scratch, which means we have to look at the whole causal history, which comprises only of commits that were already visited. This is a lot of unnecessary work and intuitively leads to an asymptotic scaling which is roughly quadratic in terms of the number of commits.
+If we take a look at the graph without the summary cache optimization, we see that the label ``summary creation'' scales quite quickly. This is because for each commit we recreate the summary from scratch, which means we have to look at the whole causal history, which comprises only of commits that were already visited. This is a lot of unnecessary work and intuitively leads to an asymptotic scaling which is roughly quadratic in terms of the number of commits.
 
 Once the summary cache optimization is applied, we see that this scaling is less aggressive, yet still not proportional to the number of commits. This is not because we occasionally miss the cache: since there are no forks, cache misses are impossible (except for the initial messages of an author). We believe this scaling is this way because the more commits we have visited previously, even if we get a summary cache hit, the more additional commits may need to be traversed to create the summary.
 
