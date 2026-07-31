@@ -1,12 +1,13 @@
 \chapter{Introduction}
-Contributions:
-\begin{enumerate}
-    \item algorithm for verifying GOC-Ledger state.
-    \item efficient encoding of delta account as commit messages.
-    \item proposal of new message type (byzantine acknowledgement)
-    \item invariants \var{d1} to \var{d7} and \var{F1} to \var{F4}, \var{M8}
-\end{enumerate}
-TODO
+In this report we propose a design of the $\delta$-GOC-Ledger \cite{delta-goc-ledger-heisch} over a byzantine fault tolerant log, which is largely based upon the design of 2P-BFT-Log proposed by Lavoie \cite{2p-bft-log}. In doing so, we discovered the need for a new message type (see section \ref{sec:choices}).
+
+In our design, we introduced to the best of our knowledge novel invariants (see section \ref{sec:invariants}). These invariants are: \var{d1} to \var{d7}, \var{M8} and \var{F1} to \var{F4}. To accommodate the new message type, we also adjusted the invariants \var{M3} and \var{M4} from the design of 2P-BFT-Log.
+
+Additionally, we designed and implemented an algorithm that we argue verifies all of these invariants except for \var{F4} on a given the set of messages. The implementation was done over Git, where we used a more efficient encoding of the data that needs to be tracked by the $\delta$-GOC-Ledger by previous approaches \cite{delta-goc-ledger-heisch}.
+The performance of this algorithm and our efficient encoding was evaluated on a basic benchmark of randomly generated transactions (see section \ref{sec:evaluation}).
+This algorithm was then optimized (see section \ref{sec:summary-cache}) with what we argue is an optimization that improves the asymptotic running time of the algorithm (see section \ref{sec:results:perf-baseline}) in the case of the basic benchmark.
+
+The implementation of the algorithm and source code of this report can be found on the following repository: \url{https://github.com/p-vf/verify-goc-ledger}
 
 \chapter{Background}
 In this section, relevant background to the concepts in this project are provided. \\
@@ -754,7 +755,7 @@ To check \var{d3} (see Algorithm~\ref{alg:d3}), we must go through the authors t
 \chapter{Implementation}
 We implemented the verification algorithm in Python. We made this choice because Python is ported to many platforms and because its integer implementation allows for arbitrarily large numbers.
 
-\subsection{Encoding Messages as Git Commits}
+\section{Encoding Messages as Git Commits}
 \label{sec:payload-syntax}
 \begin{table}
 \begin{tabular}{|l|p{7cm}|}
@@ -822,6 +823,7 @@ To retrieve messages in a reverse topological order, we use the command \texttt{
 \end{table}
 
 \subsection{Summary Cache}
+\label{sec:summary-cache}
 
 Now instead of always recreating the summary from scratch, we implemented an optimization that uses a mapping from authors to a modified version of their last summaries to reuse part of the already computed data. Let $S = \textsc{CreateSummary}(M)$ where $M$ is a message, then we compute the modified summary $S'$ that gets added to the cache by adding $M$ to the summary in the same way that the individual messages in the loop of \textsc{CreateSummary} get added. This message is then part of the message frontier, i.e. $\msgId(M) \in S'_\emph{frontier}[M_\emph{author}]$.
 
@@ -864,6 +866,7 @@ As far as we know, there is no way to get the signer of a commit using a format 
 \todo{add git command summary}
 
 \chapter{Evaluation}
+\label{sec:evaluation}
 When evaluating our design, we focused on two metrics. The first was performance of the verification algorithm and the second was efficiency of storage.
 Concerning performance, there are two things we are interested in: how is the scaling behaviour as we increase the number of messages we verify? and how does the optimization mentioned in Section~\ref{sec:impl-verification-alg} affect the runtime?
 Concerning storage, we compare how much less storage on the hard disk our design uses by storing account data in the message of a commit compared to storing the data in the tree and blob objects as in the delta-GOC-Ledger by Heisch \cite{delta-goc-ledger-heisch}.
@@ -911,6 +914,7 @@ One important thing to note when using WSL2 as a virtual machine is that the per
 \section{Results}
 \label{sec:results}
 \subsection{Performance of Verification Algorithm on baseline repository}
+\label{sec:results:perf-baseline}
 \begin{figure}
     \centering
     \begin{subfigure}{0.49\textwidth}
@@ -981,10 +985,14 @@ The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken direc
 \chapter{Conclusion}
 In this report, we specified new invariants that need to be considered when implementing the $\delta$-GOC-Ledger over such a byzantine fault tolerant log and how they interact. We then specified and implemented an algorithm that verifies these invariants. Additionally, we implemented an optimization that reduced the rate of increase of the running time with respect to the number of commits significantly. We also adapted the encoding of the account data in commit objects from the originally proposed design of Heisch and were able to achieve about a 70\% reduction in storage space when uncompressed and about a reduction of 30\% when compressed, while also being easier to retrieve using the Git CLI.
 
-\section{Future Work}
+\subsection{Future Work}
 Considering the design of the algorithm, there are some things to be done; the verification algorithm still has to be extended to include invariant \var{F4}, which we argue should guarantee byzantine repellance, as defined in the Blocklace paper \cite{blocklace-crdt}. Furthermore, the design of our algorithm is not proven to verify the mentioned invariants.
 Additionally, we have to keep track of an increasing amount of state as more commits get verified (for example $C_\emph{msg}$ and $F_\emph{valid}$). This could be solved by using some sort of reference counting technique to drop the entries in these sets that don't get referenced by new commits.
 
 Considering the implementation of the algorithm, we think the creation of the summary can be improved by a lot if the commit traversal ran in the same process as the verification algorithm, rather than calling the Git CLI through the subprocess module. This is possible, because at the time of creating a summary, we have all the data that is needed to traverse the commit graph in $C_\emph{msg}$.
+
+Considering the performance evaluation of our algorithm, we only took a look at a very basic benchmark that does not include byzantine behaviour. To remedy this, a benchmark would have to be created that includes forks and other byzantine behaviour.
+
+Considering the encoding of delta accounts as commit messages, instead of using json serialization, we could use a more efficient custom format.
 
 Considering the design of the invariants, the problem of double spending still persists and has to be solved by designing a system that prevents correct replicas from losing tokens or tokens being created out of thin air.

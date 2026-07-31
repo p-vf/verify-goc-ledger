@@ -1,5 +1,10 @@
 \chapter*{Abstract}
-TODO
+We propose a design of the $\delta$-GOC-Ledger \cite{delta-goc-ledger-heisch} over a byzantine fault tolerant log, which is largely based upon the design of 2P-BFT-Log proposed by Lavoie \cite{2p-bft-log}. In doing so, we discovered the need for a new message type and introduced new invariants.
+
+Additionally, we designed and implemented an algorithm that we argue verifies most of these invariants on a given the set of messages. The implementation was done over Git, where we used a more efficient encoding of the data that needs to be tracked by the $\delta$-GOC-Ledger by previous approaches \cite{delta-goc-ledger-heisch}.
+
+The performance of this algorithm and our encoding was evaluated on a basic benchmark of randomly generated transactions.
+This algorithm was then optimized with what we argue is an optimization that improves the asymptotic running time of the algorithm in the case of the basic benchmark.
 
 \chapter*{Acknowledgements}
-TODO
+I thank Prof. Dr. Christian Tschudin and Dr. Erick Lavoie for being able to do this project under their supervision. I especially thank Dr. Erick Lavoie for his very helpful feedback and encouraging words when I got stuck on a problem or had a lack of motivation, and for being allowed to explore a topic as freely as I was.
