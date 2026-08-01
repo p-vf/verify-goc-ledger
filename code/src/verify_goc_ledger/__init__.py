@@ -5,4 +5,4 @@ print(parent_folder)
 sys.path.insert(0, str(parent_folder))
 
 from generate_repo.main import generate_repo
-from verification.git_cli.test_git_cli import main as verify_repo_git_cli
+from verification.git_cli_verification import main as verify_repo_git_cli

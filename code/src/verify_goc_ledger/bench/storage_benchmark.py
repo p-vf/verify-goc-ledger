@@ -4,15 +4,23 @@ from pathlib import Path
 import subprocess
 import itertools
 import os
+import argparse
 
 benchmark_path = Path(f"./storage_benchmarks/valid_pareto_ack_delayed/")
-num_commits = 1000
-num_authors = 100
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("-c", "--num-commits", type=int, default=1000, help="number of commits")
+    p.add_argument("-a", "--num-authors", type=int, default=100, help="number of authors")
+    p.add_argument("-o", "--output-dir", type=Path, default=Path(benchmark_path), help="where to put the result file")
+    args = p.parse_args()
+    num_authors = args.num_authors
+    num_commits = args.num_commits
+    res_dir = args.output_dir
     def get_number(res: bytes):
         return int(res.split(b"\t")[0])
-    with open(benchmark_path/"results.csv", "wt+") as f:
+    os.makedirs(res_dir, exist_ok=True)
+    with open(res_dir/"results.csv", "wt+") as f:
         f.write("name,apparent size,real size,apparent size after compression,real size after compression\n")
         for acc_as_tree, unnecessary_deps in itertools.product([True, False], [True, False]):
             name = "account as " + ("tree" if acc_as_tree else "msg") + (" with unnecessary deps" if unnecessary_deps else "")

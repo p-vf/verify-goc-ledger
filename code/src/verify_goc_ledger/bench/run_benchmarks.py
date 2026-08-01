@@ -4,7 +4,7 @@ import argparse
 from typing import Any
 import csv
 
-from test_git_cli import verify_repo
+from verification.git_cli_verification import verify_repo
 
 def main():
     parser = argparse.ArgumentParser(prog="run_benchmarks", description="Runs Benchmarks")

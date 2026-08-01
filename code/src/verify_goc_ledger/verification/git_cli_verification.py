@@ -75,7 +75,7 @@ def check_signature(m: Commit, repo: Repo):
 
     return ""
 
-class GitCliGocVerifier:
+class GitCliGocLedgerVerifier:
     def __init__(self, git_path: str, enable_perf_stats: bool, enable_summary_cache: bool, check_signature: bool):
         self.repo = Repo(git_path, commit_format=commit_format)
         self.enable_summary_cache = enable_summary_cache
@@ -405,7 +405,7 @@ class GitCliGocVerifier:
 def verify_repo(git_path: str, profile_file: Path | None, report_file_path: Path | None, perf_stats_file: Path | None, enable_summary_cache: bool, check_signature: bool):
     generate_stats = not perf_stats_file is None
     generate_report_files = not report_file_path is None
-    g = GitCliGocVerifier(git_path, generate_stats, enable_summary_cache, check_signature)
+    g = GitCliGocLedgerVerifier(git_path, generate_stats, enable_summary_cache, check_signature)
     if profile_file:
         path = str(profile_file)
         cProfile.runctx("g.verify()", {}, {"g": g}, path)

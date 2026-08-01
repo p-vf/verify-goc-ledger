@@ -6,7 +6,7 @@ import sys
 import re
 
 from common.misc import bcolors
-from test_git_cli import verify_repo
+from verification.git_cli_verification import verify_repo
 
 def main():
     specified_tests = set(sys.argv[1:])
