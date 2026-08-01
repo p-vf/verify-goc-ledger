@@ -20,7 +20,7 @@ However one problem that arises is that an adversary E can create two messages t
 If the append-only log is implemented as a hash-graph, dependencies between messages of different authors can be modelled by including a set of hashes into a message which represent its immediate dependencies. Such dependencies are necessary to order messages by causality, i.e. if there is a hash in the dependencies of message A belonging to message B, we know the message B must have been created before the message A (see happens-before relationship, eqn. \ref{eqn:happens-before}).
 
 \section{2P-BFT-Log}
-2P-BFT-Log is a design that implements an append-only log data structure and behaves just like one as long as there are no forks. As soon as there is evidence of a fork in a log, any further messages of the corresponding author are ignored \cite{2p-bft-log}. If there is no fork in a given log, the log is said to be in the \emph{growing phase}, otherwise it is in the \emph{shrinking phase}.
+2P-BFT-Log is a design that implements an append-only log data structure and behaves just like one as long as there are no forks. As soon as there is evidence of a fork in a log, any further messages of the corresponding author are ignored \cite{2p-bft-log}.
 
 \subsection{Messages}
 The design of 2P-BFT-Log consists of several parts. First of all, each message has certain contents, each of which is called a field. The fields of a message and their corresponding type and meaning are listed in Table \ref{tab:2p-bft-log-msg-content}.
@@ -35,7 +35,7 @@ The design of 2P-BFT-Log consists of several parts. First of all, each message h
     $M_\emph{deps}$ & Set of MsgId & State of logs from other authors on which the message depends\\
     $M_\emph{payload}$ & String & Content of message, in our case representing either an account update or a byzantine acknowledgement (see sections \ref{sec:account-as-str} and \ref{sec:ack-as-str} respectively) \\
     $M_\emph{signature}$ & String & Signature of the concatenation of the previous fields using the private key corresponding to $M_\emph{author}$.\\
-    $M_\emph{date}$ & Date & Date the message was created at \\
+    $M_\emph{date}$ & Timestamp & Date the message was created at \\
     \hline
     \end{tabular}
     \caption{Contents of a message according to the design of 2P-BFT-Log}
@@ -95,18 +95,19 @@ If $S$ is a set of messages, the (strict) causal history of $S$ is overloaded an
 \[
     \mathcal H_r(S) \definedas \bigcup_{M \in S}\mathcal H_r(M)
 \]
+Where $r$ is either $\le$ or $<$.
 
 
 \section{\(\delta\)-GOC-Ledger}
 
-The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how many tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors form the state of the ledger. More concretely, a ledger $L$ is a mapping from authors to their corresponding account.
+The Grow-Only-Counter-Ledger (GOC-Ledger) is a consensus-free data structure that implements a ledger designed to be used to track transactions of crypto-tokens. A ledger needs to track which author owns how many tokens, to be able to check how many tokens they are able to spend in subsequent transactions. An account $A$ is the unit of data that keeps track of this information. Multiple such accounts from different authors form the state of the ledger. More concretely, a ledger $L$ is a mapping from author identities to their corresponding account.
 
-In the case of the GOC-Ledger, this is realized by introducing 5 fields: $A_\emph{author}$ which is the author of this account, $A_\uparrow$ and $A_\downarrow$ which represent the number of created/destroyed tokens respectively, $A_\rightarrow$ and $A_\leftarrow$ which represent the number of given/received tokens respectively. $A_\uparrow$ and $A_\downarrow$ are simple grow-only counters whereas $A_\rightarrow$ and $A_\leftarrow$ are mappings from author names to grow-only counters, which represent the number of tokens $A_\emph{author}$ has given to or acknowledged from the other author respectively.
+In the case of the GOC-Ledger, this is realized by introducing 5 fields: $A_\emph{author}$ which is the author of this account, $A_\uparrow$ and $A_\downarrow$ which represent the number of created/destroyed tokens respectively, $A_\rightarrow$ and $A_\leftarrow$ which represent the number of given/received tokens respectively. $A_\uparrow$ and $A_\downarrow$ are simple grow-only counters whereas $A_\rightarrow$ and $A_\leftarrow$ are mappings from author ids to grow-only counters, which represent the number of tokens $A_\emph{author}$ has given to or acknowledged from the author respectively.
 
 For ease of writing, the notation $S_*$ is defined to be the domain of definition of a mapping $S$. E.g. if $L$ is a ledger, $L_*$ denotes the set of authors that have an account in this ledger.
 
-To get the balance of an account, we can compute \[\balance(A) \definedas A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\].
-Additionally there is a merge operation with which accounts can be merged. This merge function is only defined on accounts of the same author and returns the account that contains the maximal values of all the grow only counters in both of the accounts and adds all the grow-only counters that are only in one of the two accounts. I.e. for accounts $A$ and $B$, the merged account $C = A \sqcup B$ is defined as:
+The balance of an account $A$ is defined as: \[\balance(A) \definedas A_\uparrow + \left(\sum_{a \in A_{\leftarrow*}} A_\leftarrow[a]\right) - A_\downarrow - \left(\sum_{a \in A_{\rightarrow*}} A_\rightarrow[a]\right)\]
+Additionally there is a merge operation, denoted $\sqcup$, with which accounts can be merged. This merge operation is only defined on accounts of the same author and returns the account that contains the maximal values of all the grow only counters in both of the accounts and adds all the grow-only counters that are only in one of the two accounts. Formally, for accounts $A$ and $B$, the merged account $C = A \sqcup B$ is defined as:
 \begin{align*}
     C_\emph{author} &= A_\emph{author} = B_\emph{author}\\
     C_\uparrow &= \max\{A_\uparrow, B_\uparrow\}\\
@@ -118,7 +119,7 @@ Additionally there is a merge operation with which accounts can be merged. This 
 \end{align*}
 
 
-Furthermore, there is also a merge operation on a ledger and an account. The ledger and an account get merged by merging the account with the corresponding account in the ledger if the author is present and if not, adding the account to the ledger. Formally, if we have a ledger $L$ and account $A$, $L' = L \sqcup A$ is defined as:
+Furthermore, there is also a merge operation on a ledger and an account, also denoted $\sqcup$. The ledger and an account get merged by merging the account with the corresponding account in the ledger if the author is present and if not, adding the account to the ledger. Formally, if we have a ledger $L$ and account $A$, $L' = L \sqcup A$ is defined as:
 
 \begin{align*}
     L'[A_\emph{author}] &=\begin{cases} L[A_\emph{author}] \sqcup A & \text{ if } A_\emph{author} \in L_* \\
@@ -138,10 +139,10 @@ To store the state of the ledger more efficiently with regards to space, only th
 
 
 \chapter{Design}
+In this chapter we present the design of the $\delta$-GOC-Ledger over 2P-BFT-Log, including the choices that were made, the invariants on the design and the algorithm for verifying the invariants.
 
 \section{Definitions}
-
-$\textsc{Signed}$ of message $M$ is the predicate that is true iff $M_\emph{signature}$ is a valid signature belonging to $M_\emph{author}$.
+First, we define some terms that are used in subsequent sections. We start with the signature check predicate, denoted $\textsc{Signed}$ of message $M$. $\textsc{Signed}(M)$ is true iff $M_\emph{signature}$ is a valid signature belonging to $M_\emph{author}$.
 
 $\textsc{Signed}_A(\mathcal M)$ is defined as the set of messages in $\mathcal M$ that are created and signed correctly by author $A$, formally:
 \[
@@ -161,6 +162,7 @@ A fork proof is a set of messages which all have the same previous message. We d
     \right)
 \]
 
+For ease of writing, we define some functions related to the immediate dependencies of a message.
 The function \var{deps} of message $M$ is defined as the messages in its immediate dependencies.
 \[\var{deps}(M) \definedas \{M' \mid \msgId(M') \in M_\emph{deps}\}\]
 
@@ -177,7 +179,7 @@ The set $\max_A(\mathcal M)$ is the set of message ids belonging to maximal mess
     \max_A(\mathcal M) \definedas \{\msgId(M) \mid M \in \textsc{Signed}_A(\mathcal M) \land \forall M' \in \textsc{Signed}_A(\mathcal M) : M \not\happensbeforelog M'\}
 \]
 
-Since there are multiple authors that we need to track during verification, we combine this information in a frontier. A frontier is a map of author names to a set of messages and is defined over a set of messages $\mathcal M$, written $F(\mathcal M)$.
+There are multiple authors that we need to track of during verification. We combine this information in a frontier. A frontier is a map of author ids to a set of messages and is defined over a set of messages $\mathcal M$, written $F(\mathcal M)$.
 \begin{equation}
     \label{eqn:frontier}
     F(\mathcal M) \definedas \{A \mapsto \max_A(\mathcal M) \mid \exists M \in \mathcal M : A = M_\emph{author} \land \textsc{Signed}(M)\}
@@ -189,7 +191,7 @@ In our design we made some choices. To save space, we only keep track of the nec
 This message type is there to point out to other replicas that some of the participants behave badly, and to prevent colluders from being able to keep ignoring evidence of a fork.
 
 \section{Detecting Byzantine Behaviour}
-For specifying invariants related to byzantine behaviour, it is necessary to define what we consider byzantine behaviour. This is mostly based on the Blocklace paper by Almeida et al. \cite{blocklace-crdt}, but was adapted to the design of 2P-BFT-Log.
+For specifying invariants related to byzantine behaviour, it is necessary to define what we consider byzantine behaviour. This is mostly based on the Blocklace paper by Almeida et al. \cite{blocklace-crdt}, but was adapted to our design.
 The function \var{byz} of a set of messages $S$ is the set of authors exhibiting byzantine behaviour in the set $S$ and is defined as follows:
 \begin{align*}
     \var{byz}(S) \definedas \{a \mid\,&\exists M \in S : \\
@@ -202,10 +204,11 @@ The function \var{byz} of a set of messages $S$ is the set of authors exhibiting
     &)\}
 \end{align*}
 
-Where $\var{valid}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and further invariants hold for the message specified in section \ref{sec:invariants}. It is important to note that our design of the predicate $\var{valid}$ does not follow the convention proposed in the design of the Blocklace paper that messages from known byzantine actors are ignored as (see section \ref{sec:invariants-delta-a} for justification).
+Where $\var{valid}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and further invariants hold for the message specified in section \ref{sec:invariants}. It is important to note that our design of the predicate $\var{valid}$ does not follow the convention proposed in the design of the Blocklace paper that messages from known byzantine actors are ignored, see section \ref{sec:invariants-delta-a} for justification.
 
 \section{Invariants}
 \label{sec:invariants}
+In this section we introduce the invariants of our design. We start by introducing the invariants related to the account state. Then the modified invariants of the 2P-BFT-Log are listed and then, we introduce the invariants related to byzantine behaviour.
 
 \subsection{Invariants on message \(M\) and corresponding delta account}
 \label{sec:invariants-delta-a}
@@ -217,18 +220,15 @@ Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was
 \end{equation}
 where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT} \land \var{valid}(M')\}$ is the set of all delta accounts in the strict causal history of $M$.
 
-Since we merge account states no matter if the corresponding authors exhibited byzantine behaviour, this means that double spending is not prevented nor handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue but is outside the scope of this project.
+Since we merge account states no matter if the corresponding authors forked their log, this means that double spending is not prevented nor handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue but is outside the scope of this project.
 
-For this project, we assume that the predicate \var{valid} may depend on messages in the causal history from known equivocators to avoid negative balance in valid account messages. This is in contrast to the design described in the Blocklace paper, where the valid predicate may only depend on messages in the causal history from authors that don't exhibit byzantine behaviour. This means that if the balance of an account is negative, this can only have been caused by either a) the author overspending tokens or b) there being a fork in the causal history of the same account, where the double spending happened. In case a) the message is invalid and in case b) the message can also be viewed as invalid, because it is guaranteed to be created by a byzantine process, which means no message $M$ with $\msgType(M) = \var{ACCOUNT}$ should ever reference it anyway. So in either case, a negative balance invalidates a message.
 
 $L_\textit{after}$ represents the ledger after $\deltacc A$ has been applied to $L_\textit{before}$, so $L_\emph{after} = L_\emph{before} \sqcup \deltacc{A}$.
-
 Further, let $A^\delta = \acc(M)$ be the delta account stored in $M$.
 
-The invariant \var{d1} ensures that there are no unnecessary GOCs stored in $A^\delta$. An unnecessary GOC is a GOC that doesn't increase the corresponding GOC in $L_\emph{before}$ when merged with it. This means each GOC in $A^\delta$ must be positive and strictly greater than the previous value in $L_\emph{before}$ if it exists.
+The invariant \var{d1} ensures that there are no unnecessary GOCs stored in $A^\delta$. An unnecessary GOC is a GOC that doesn't increase the corresponding GOC in $L_\emph{before}$ when merged with it. This means each GOC in $A^\delta$ must be strictly greater than the previous value in $L_\emph{before}$ if it is defined.
 \begin{invariant}{\var{d1}}
     (minimal):
-    $A^\delta_\uparrow \neq 0 \neq A^\delta_\downarrow$ holds and for all $n \in \text{image}(A^\delta_\rightarrow)\cup \text{image}(A^\delta_\rightarrow)$, $n > 0$ holds.
     If $M_\emph{author} \in (L_\emph{before})_*$, then all of the following holds, where $A_\emph{old} = L_\emph{before}[M_\emph{author}]$:
     \begin{itemize}
         \item if $A^\delta_\uparrow \neq 0$, then $(A_\emph{old})_\uparrow < A^\delta_\uparrow$,
@@ -237,18 +237,18 @@ The invariant \var{d1} ensures that there are no unnecessary GOCs stored in $A^\
         \item for all $a \in A^\delta_{\leftarrow*} \cap (A_\emph{old})_{\leftarrow*}$, $(A_\emph{old})_{\leftarrow}[a] < A^\delta_{\leftarrow}[a]$ holds.
     \end{itemize}
 \end{invariant}
-The invariant \var{d5} ensures that at least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ is defined, except if the message contains the first delta account.
+The invariant \var{d5} ensures that at least one of the fields $\deltacc A_\rightarrow$, $\deltacc A_\leftarrow$, $\deltacc A_\uparrow$, $\deltacc A_\downarrow$ is defined, except for the first account message.
 \begin{invariant}{\var{d5}}
     (account not empty): If $M_\emph{author} \in (L_\emph{before})_*$, then
     $A^\delta_\uparrow \neq 0 \lor A^\delta_\downarrow \neq 0 \lor A^\delta_\rightarrow \neq \emptyset \lor A^\delta_\leftarrow \neq \emptyset$ holds.
 \end{invariant}
-The invariant \var{d2} ensures that accounts don't have negative balance.
+The invariant \var{d2} ensures that accounts don't have negative balance. See section \ref{sec:neg-balance} for reasoning.
 \begin{invariant}{\var{d2}}
     (non-negative balance): The constraint $\balance(L_\textit{after}[M_\emph{author}]) \ge 0$ holds.
 \end{invariant}
-The invariant \var{d3} ensures that all the tokens that were acknowledged, where actually given to the account before $M$.
+The invariant \var{d3} ensures that all the tokens that were acknowledged where actually given to the account.
 \begin{invariant}{\var{d3}}
-    (valid acknowledgements) If $\deltacc A_\leftarrow$ is non-empty, the constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[M_\emph{author}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$.
+    (valid acknowledgements) The constraint $\deltacc A_\leftarrow[x] \le (L_\textit{before}[x])_\rightarrow[M_\emph{author}]$ must hold for all $x \in \deltacc A_{\leftarrow*}$.
 \end{invariant}
 Invariant \var{d4} ensures that only replicas that are permitted can create tokens. For the purposes of this report, we define the set $\var{Creators}$ which contains all the authors that are allowed to create tokens.
 \begin{invariant}{\var{d4}}
@@ -259,16 +259,24 @@ We want the dependencies that are necessary to track the origins of a transactio
 
 A message $M'$ is relevant to message $M$ iff message $M$ acknowledges tokens from $M_\emph{author}$.
 \begin{invariant}{\var{d6}}
-    (relevant dependencies): all the dependencies of $M$ are relevant, i.e. for all $M' \in \var{deps}(M)$ it holds that $M'_\textit{author} \in \acc(M)_{\leftarrow *}$.
+    (relevant dependencies): all the immediate dependencies of $M$ are relevant, i.e. for all $M' \in \var{deps}(M)$ it holds that $M'_\textit{author} \in \acc(M)_{\leftarrow *}$.
 \end{invariant}
 One thing to note here is that only the authors in the field $\acc(M)_{\leftarrow *}$ get checked. If there is an author in $\acc(M)_{\rightarrow *}$ that doesn't exist or has exhibited byzantine behaviour, this is semantically the same as if the tokens given to that non-existent author were destroyed (meaning $\acc(M)_\downarrow$ being increased by this amount) and is always allowed.
 
-Furthermore, we need to check that there is exactly one dependency for each author mentioned in the acked field. That there is at most one dependency per author is covered by the invariant \var{M4}.
+Furthermore, we need to check that there is at least one immediate dependency for each author mentioned in the field $\acc(M)_\leftarrow$.
 \begin{invariant}{\var{d7}}
     (necessary dependencies): for any author $a \in \acc(M)_{\leftarrow *}$, there exists a message $M'$ with $M'_\textit{author} = a$ and $\msgId(M') \in M_\textit{deps}$
 \end{invariant}
 
+That there is at most one immediate dependency per author is covered by the invariant \var{M4}, which is introduced in section \ref{sec:invariants-2p-bft-log}.
+
+\subsubsection{On Negative Balance}
+\label{sec:neg-balance}
+For this project, we assume that the predicate \var{valid} may depend on messages in the causal history from known equivocators to avoid negative balance in valid account messages, which is in contrast to the design described in the Blocklace paper \cite{blocklace-crdt}, where the valid predicate may only depend on messages in the causal history from authors that don't exhibit byzantine behaviour. From this follows that if the balance of an account is negative, this can only have been caused by either a) the author overspending tokens or b) there being a fork in the causal history of the same account, where the double spending happened. In case a) the message is invalid and in case b) the message can also be viewed as invalid, because it is guaranteed to be created by a byzantine process, which means no message $M$ with $\msgType(M) = \var{ACCOUNT}$ should ever reference it anyway. So in either case, a negative balance invalidates a message.
+
+
 \subsection{Invariants on Message \(M\) inherited from 2P-BFT-Log}
+\label{sec:invariants-2p-bft-log}
 \begin{enumerate}
     \item [\var{M1}] \emph{(single previous dependency)}: either $M_\textit{prev} = \bot$ or $M_\textit{prev} = \msgId(M'): M'$ exists and is valid.
     \item [\var{M2}] \emph{(single author)}: if $M_\textit{prev} = \msgId(M')$ then $M'_\textit{author} = M_\textit{author}$.
@@ -305,11 +313,11 @@ We want to ensure that authors don't make any transactions with an author that h
     If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any author $a \in \var{byz}(\mathcal H_<(M))$, there must be no message $M' \in \var{deps}(M)$ with $M'_\emph{author} = a$.
 \end{invariant}
 
-We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant \var{F2}). An exclusion is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
+We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant \var{F2}). An exception is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
 \begin{invariant}{\var{F2}}
     \emph{(acknowledgement before transaction)}:\\
-    If $\msgType(M) = \var{ACCOUNT}$ then the following must hold for any message $M' \in \var{deps}(M)$:
-    $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$.
+    If $\msgType(M) = \var{ACCOUNT}$ then for any message $M' \in \var{deps}(M)$,
+    $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$ must hold.
 \end{invariant}
 
 To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages in the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant \var{F4}).
@@ -328,7 +336,7 @@ The invariant \var{F4} ensures that additionally, any message that is in the dep
 
 Our algorithm does not verify the invariant \var{F4}, but \var{F3} which is quite similar, but easier to verify. In \var{F3}, there is no requirement for minimality of the message $M'$. This means that any of the messages that get added to the causal history by $M'$ must make a new author byzantine, not just the message $M'$.
 
-If we only verify \var{F3} this allows colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labeled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour.
+If we don't check \var{F4} this allows byzantine colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labelled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour.
 
 \section{Syntax of Messages}
 \label{sec:syntax-of-msgs}
@@ -356,11 +364,12 @@ To verify a replica, its messages are visited in an arbitrary ascending topologi
 \end{algorithmic}
 \end{algorithm}
 
-The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$.
-For readability the function \textsc{VerifyMessage} was split up into multiple conditions which return false if violated. These conditions are listed in sections \ref{sec:m-invariant-checks} and \ref{sec:delta-invariant-checks}.
+The function \textsc{VerifyMessage} takes as argument the message $M$ to be verified, the message cache $C_\emph{msg}$ and the set of already validated messages, $F_\emph{valid}$ and is listed in Algorithm~\ref{alg:verify-message}. First off, we check that $M$ is syntactically well formed, i.e. $\var{wellFormed}(M)$ is true if not, we return false.
+For readability the rest of the function \textsc{VerifyMessage} was split up into multiple conditions which return false if violated. These conditions are listed in sections \ref{sec:m-invariant-checks} and \ref{sec:delta-invariant-checks}.
 
 \begin{algorithm}[ht]
     \caption{Basic structure of the function verifying individual messages}
+    \label{alg:verify-message}
 \begin{algorithmic}
 \Function{VerifyMessage}{message $M$, message cache $C_\emph{msg}$, $F_\emph{valid}$}
     \If{$\lnot \var{wellFormed}(M)$}
@@ -377,10 +386,11 @@ For readability the function \textsc{VerifyMessage} was split up into multiple c
 
 \subsection{Summary Data Structure}
 In the verification algorithm, we use a data structure that we call a summary.
-The summary is an accumulation of information necessary to verify the invariants \var{M7}, \var{F1}, \var{F2}, \var{F3} and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}\footnote{The fields $S_\emph{account}$ and $S_\emph{recieved}$ represent the relevant parts of $L_\emph{before}$ in Equation~\ref{eqn:l-before-def}}. A summary is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$.
+The summary is an accumulation of information necessary to verify the invariants \var{M7}, \var{F1}, \var{F2}, \var{F3} and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}\footnote{The fields $S_\emph{account}$ and $S_\emph{recieved}$ represent the relevant parts of $L_\emph{before}$ in Equation~\ref{eqn:l-before-def}}, and is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$.
 An explicit procedure for $\textsc{CreateSummary}$ is given in Algorithm~\ref{alg:create-summary}.
 \begin{table}[ht]
-    \begin{tabular}{|l|l|p{6cm}|}
+    \centering
+    \begin{tabular}{|l|p{4cm}|p{6cm}|}
         \hline
         \textbf{Field} & \textbf{Type} & \textbf{Meaning} \\ \hline
         $S_\emph{frontier}$ &
@@ -409,7 +419,7 @@ An explicit procedure for $\textsc{CreateSummary}$ is given in Algorithm~\ref{al
 \end{table}
 
 \subsection{Creating the Summary of Message \(M\)}
-To create the summary, we first have to initialize the fields and then iterate over all the messages in $\mathcal H_<(M)$ in topological order with the condition that their signature is valid. If we focus on the second statement and the following in the loop (see line \ref{alg:create-summary:frontier}), we can see how the frontier is built up over the iterations. The goal is to store the maximal messages of each author in the frontier $\var{Summary}_\emph{frontier}$. If we assume that $L$ contains the maximal messages up to but not including $N$, we know that if $N_\emph{prev}$ is not in $L$, this means $N$ is concurrent to the messages in $L$, which means we need to add it to $L$. $L$ gets then stored back in $\var{Summary}_\emph{frontier}$, which means we build the frontier of $\mathcal H_<(M)$ incrementally. If the size of this resulting $L$ is greater than 1, we know the creator of $N$ must have forked their log, thus $N_\emph{author}$ is added to $\var{Summary}_\emph{byzantine}$.
+To create the summary (see Algorithm~\ref{alg:create-summary}), we first have to initialize the fields and then iterate over all the messages in $\mathcal H_<(M)$ in topological order with the condition that their signature is valid. If we focus on the second statement (line \ref{alg:create-summary:frontier}) and the following in the for-loop, we can see how the frontier is built up over the iterations. The goal is to store the maximal messages of each author in the frontier $\var{Summary}_\emph{frontier}$. If we assume that $L$ contains the maximal messages up to but not including $N$, we know that if $N_\emph{prev}$ is not in $L$, this means $N$ is concurrent to the messages in $L$, which means we need to add it to $L$. $L$ gets then stored back in $\var{Summary}_\emph{frontier}$, which means we build the frontier of $\mathcal H_<(M)$ incrementally. If the size of this resulting $L$ is greater than 1, we know the creator of $N$ must have forked their log, thus $N_\emph{author}$ is added to $\var{Summary}_\emph{byzantine}$.
 
 Now we come to the first part of the loop, which only runs if $N$ is a valid message and is there to update $\var{Summary}_\emph{account}$, $\var{Summary}_\emph{received}$ and $\var{Summary}_\emph{byz\_acked}$. If $N$ is an account message we do the following: if $N$ comes from the same author as $M$, we update $\var{Summary}_\emph{account}$ accordingly, otherwise $\var{Summary}_\emph{received}$ is updated with the number of tokens given to $M_\emph{author}$ (if any).
 
@@ -492,7 +502,7 @@ If $N$ is a byzantine acknowledgement message that comes from the same author as
 \subsection{Verifying the invariants \var{M1} to \var{M7}, and \var{F1}, to \var{F3}}
 \label{sec:m-invariant-checks}
 
-The simple invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$ in Table \ref{tab:invariant-code-msg}. Each of the simple conditions corresponds to an if statement that returns false if the condition is met.
+The simple invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$ and listed in Table \ref{tab:invariant-code-msg}. Each of the simple conditions corresponds to an if statement that returns false if the condition is met.
 
 \begin{table}
 \begin{tabular}{|l|l|}
@@ -548,13 +558,13 @@ Additionally the mapping \var{Authors} of authors to their corresponding set of 
 \begin{algorithm}[ht]
 \caption{Code snippet verifying \var{M7}, \var{F1}, \var{F2}, and \var{F3}}
 \label{alg:m7f1}
-\begin{algorithmic}
+\begin{algorithmic}[1]
     \Statex \textbf{Precondition:} \var{Authors} has been calculated (as in Algorithm~\ref{alg:m4})
     \Statex \ldots \vphantom{I}
     \State $\var{Summary} \gets \Call{CreateSummary}{M}$
     \ForAll{$\var{Author} \in \var{Authors}_*$}
         \If{$\msgType(M) = \var{ACCOUNT}$}
-            \If{$\var{Author} \in \var{Summary}_\emph{byzantine}$} \Comment{F1}
+            \If{$\var{Author} \in \var{Summary}_\emph{byzantine} \lor \var{Author} \notin \var{Summary}_\emph{byzantine}$} \Comment{F1}
                 \State \Return false
                 \label{alg:line:f1}
             \EndIf
@@ -577,7 +587,7 @@ Additionally the mapping \var{Authors} of authors to their corresponding set of 
         % \EndIf
     \EndFor
     \If{$\msgType(M) = \var{ACCOUNT}$} \Comment \var{F2}
-        \If{$\var{Summary}_\emph{byzantine} \not\subseteq \var{Summary}_\emph{byz\_acked}$}
+        \If{$\var{Summary}_\emph{byzantine} \ne \var{Summary}_\emph{byz\_acked}$}
             \State \Return false
         \EndIf
     \EndIf
@@ -585,7 +595,7 @@ Additionally the mapping \var{Authors} of authors to their corresponding set of 
 \end{algorithmic}
 \end{algorithm}
 To check the invariants \var{F1}, \var{F3} and \var{M7} (see Algorithm~\ref{alg:m7f1}), we have to iterate over the authors that are in the immediate dependencies of $M$, which is $\var{Authors}_*$. If $M$ is an account message and one of the authors is byzantine according to the summary of $M$, then $M$ is invalid (see line \ref{alg:line:f1}), because it violates \var{F1}.
-If $M$ is a byzantine acknowledgement but the author was already acknowledged as byzantine, then this message is invalid as well (see line \ref{alg:line:f3-prime}) because it violates \var{F3}.
+If $M$ is a byzantine acknowledgement but the author was either already acknowledged as byzantine, or not byzantine, then this message is invalid as well (see line \ref{alg:line:f3-prime}) because it violates \var{F3}.
 Furthermore if any of the immediate dependencies is not part of the maximal messages in their corresponding log, then the message is invalid (see line \ref{alg:line:m7}) because it violates \var{M7}.
 
 To verify \var{F2}, we have to check that every author that exhibited byzantine behaviour (contained in $\var{Summary}_\emph{byzantine}$) was also acknowledged (contained in $\var{Summary}_\emph{byz\_acked}$). If any of the authors in this frontier are byzantine but not acknowledged as such, \var{F2} is violated.
@@ -596,8 +606,7 @@ To verify \var{F2}, we have to check that every author that exhibited byzantine 
 
 The following code snippets are wrapped inside a big if statement on the condition that the message has message type $\var{ACCOUNT}$. We assume that the variables $A_\emph{old}$, $\deltacc{A}$ and $A_\emph{new}$ have been computed as in Algorithm~\ref{alg:dpre}, and \var{Summary} has been computed as in Algorithm~\ref{alg:m7f1}.
 $A_\emph{old}$ represents the old account state and is retrieved from $\var{Summary}_\emph{account}$. If $M$ is the first message of an author, i.e. the author of this message is not in the frontier $\var{Summary}_\emph{frontier}$, we assign the null value to $A_\emph{old}$ to allow the first messages to be treated differently (otherwise $A_\emph{old}$ would just be an empty account).
-$\deltacc{A}$ represents the newly added state and has empty fields for each field that isn't stored, i.e. $A_\uparrow$ and $A_\downarrow$ have $0$, $A_\rightarrow$ and $A_\leftarrow$ have $\emptyset$ as empty value.
-$A_\emph{new}$ is the state of the account after applying $\deltacc{A}$.
+$\deltacc{A}$ represents the newly added delta account and $A_\emph{new}$ is the state of the account after applying $\deltacc{A}$.
 
 \begin{algorithm}[ht]
     \caption{Code snippet assigning relevant account states}
@@ -616,7 +625,7 @@ $A_\emph{new}$ is the state of the account after applying $\deltacc{A}$.
 \end{algorithmic}
 \end{algorithm}
 
-As before, many invariant checks are simple if-conditions, which are re-expressed in terms of $A_\emph{old}$, $\deltacc{A}$, $A_\emph{new}$, $C_\emph{msg}$ and $M$, see Table \ref{tab:invariant-code-delta}.
+As before, many invariant checks are simple if-conditions, which are re-expressed in terms of $A_\emph{old}$, $\deltacc{A}$, $A_\emph{new}$, $C_\emph{msg}$ and $M$, and listed in Table~\ref{tab:invariant-code-delta}.
 \begin{table}[ht]
 \begin{tabular}{|c|l|}
 \hline
@@ -662,7 +671,7 @@ As before, many invariant checks are simple if-conditions, which are re-expresse
 \end{algorithmic}
 \end{algorithm}
 % ASSUME_CAUSAL_STABILITY
-To check \var{d6} and \var{d7} (see Algorithm~\ref{alg:d67}) we create the set of authors \var{RelevantAuthors} that are relevant to the transaction, which are the authors that were the authors form which tokens were acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared more than once in the dependencies, in either case the message is invalid.
+To check \var{d6} and \var{d7} (see Algorithm~\ref{alg:d67}) we create the set of authors \var{RelevantAuthors} that are relevant to the transaction, which are the authors from which tokens are acknowledged. We then iterate over the authors occurring in the immediate dependencies and in each iteration we do the following: if the author is in the set, we remove it from the set and go on to the next iteration. If the author is not in the set, we know that this author is either not relevant or appeared more than once in the dependencies, in either case the message is invalid.
 
 % ASSUME_CAUSAL_STABILITY
 To check \var{d7}, i.e. that all necessary dependencies are present, we can check whether the set of authors relevant to the transaction was fully consumed in the preceding loop. If this set is not empty, this means an author is missing in the immediate dependencies, thus $M$ must be invalid.
@@ -772,7 +781,7 @@ We implemented the verification algorithm in Python. We made this choice because
 The encoding of a message $M$ as a Git commit can be seen in table \ref{tab:msg-encoded-as-commit}. Now we specify further what $M_\emph{payload}$ must look like.
 
 If the message represents a byzantine acknowledgement, the payload must be empty.
-If the message represents delta account $A^\delta$, the payload contains an object encoded in the json format \cite{json}, where the values representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The values of ``c'' and ``d'' are positive numbers representing their GOCs and the values of ``a'' and ``g'' must be non-empty json objects that contains a member (name/value pair) for each author where the name is the author identifier and the value a positive number representing the corresponding GOC.
+If the message represents delta account $A^\delta$, the payload contains an object encoded in the json format \cite{json}, where the values representing the fields $A^\delta_\uparrow$, $A^\delta_\downarrow$, $A^\delta_\leftarrow$, and $A^\delta_\rightarrow$ are named ``c'', ``d'', ``a'', and ``g'' respectively. The values of ``c'' and ``d'' are positive numbers representing their GOCs and the values of ``a'' and ``g'' must be non-empty json objects that contains a member (name/value pair) for each author in $A^\delta_{\leftarrow*}$ and $A^\delta_{\rightarrow*}$ respectively where the name is the author identifier and the value a positive number representing the corresponding GOC.
 
 The serialized json object must not contain any newlines, as we retrieve the message content using the subject of the message (format placeholder \texttt{\%s} in git) which is newline delimited \cite{git-subject-line}.
 
@@ -820,9 +829,9 @@ To retrieve messages in a reverse topological order, we use the command \texttt{
 \subsection{Summary Cache}
 \label{sec:summary-cache}
 
-Now instead of always recreating the summary from scratch, we implemented an optimization that uses a mapping from authors to a modified version of their last summaries to reuse part of the already computed data. Let $S = \textsc{CreateSummary}(M)$ where $M$ is a message, then we compute the modified summary $S'$ that gets added to the cache by adding $M$ to the summary in the same way that the individual messages in the loop of \textsc{CreateSummary} get added. This message is then part of the message frontier, i.e. $\msgId(M) \in S'_\emph{frontier}[M_\emph{author}]$.
+Now instead of always recreating the summary from scratch, we implemented an optimization that uses a mapping from authors to a modified version of their last summaries to reuse the already computed data. Let $S = \textsc{CreateSummary}(M)$ where $M$ is a message, then we compute the modified summary $S'$ that gets added to the cache by adding $M$ to the summary in the same way that the individual messages in the loop of \textsc{CreateSummary} get added. This message is then part of the message frontier, i.e. $\msgId(M) \in S'_\emph{frontier}[M_\emph{author}]$.
 
-The summaries in the summary cache can then be used to compute $\textsc{CreateSummary}(M')$, where $M'$ is a message, more efficiently, if the modified summary $S'$ in the cache corresponding to author $M'_\emph{author}$ has $S'_\emph{frontier}[M'_\emph{author}] = \{M'_\emph{prev}\}$. This is the case if the previously visited message of author $M'_\emph{author}$ corresponds to $M'_\emph{prev}$ and $M'_\emph{author}$ did not acknowledge a fork of their own.
+The modified summaries in the summary cache can then be used to compute $\textsc{CreateSummary}(M')$, where $M'$ is a message, more efficiently, if the modified summary $S'$ in the cache corresponding to author $M'_\emph{author}$ has $S'_\emph{frontier}[M'_\emph{author}] = \{M'_\emph{prev}\}$. This is the case if the previously visited message of author $M'_\emph{author}$ corresponds to $M'_\emph{prev}$ and $M'_\emph{author}$ did not acknowledge a fork of their own.
 
 Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only traversing the messages that come after all of the messages in $S'_\emph{frontier}$. The command to retrieve these messages in git is \texttt{git log <m>\^{} \^{}<f1> \^{}<f2> ... \^{}<fn>}, where \texttt{<fi>} represent the message ids in $S'_\emph{frontier}$ and \texttt{<m>} represents $\msgId(M')$.  The impact of this optimization can be seen in the Section~\ref{sec:results}.
 
@@ -856,23 +865,18 @@ Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only
 % Here is an invariant that arises naturally: for a message $M$, the induced subgraph of its dependencies only has forks that were acknowledged by author $M_\textit{author}$, i.e.
 
 \section{Signature Verification}
-As far as we know, there is no way to get the signer of a commit using a format placeholder in the Git CLI. We can only check that a signature is valid, but not that $M_\emph{author}$ is the creator of $M_\emph{signature}$, which makes this check alone useless. To remedy this, we run the \texttt{git show} command for each commit that has a valid signature (based on the signature validity retrieved with the format placeholder \texttt{\%G?}) with the \texttt{--format=raw} option, which prints the raw commit info including the base64 encoding of the signature, from which we can extract the signer and check that it matches $M_\emph{author}$.
-
-\todo{add git command summary}
+There is no way to get the signer of a commit using a format placeholder in the Git CLI. We can only check that a signature is valid, but not that $M_\emph{author}$ is the creator of $M_\emph{signature}$ (see \texttt{\%G?} in Table~\ref{tab:git-format-placeholders}), which makes this check alone useless. To remedy this, we run the \texttt{git show} command for each commit that has a valid signature (based on the signature validity retrieved with the format placeholder \texttt{\%G?}) with the \texttt{--format=raw} option, which prints the raw commit info including the base64 encoding of the signature, from which we can extract the signer and check that it matches $M_\emph{author}$.
 
 \chapter{Evaluation}
 \label{sec:evaluation}
 When evaluating our design, we focused on two metrics. The first was performance of the verification algorithm and the second was efficiency of storage.
-Concerning performance, there are two things we are interested in: how is the scaling behaviour as we increase the number of messages we verify? and how does the optimization mentioned in Section~\ref{sec:impl-verification-alg} affect the runtime?
+Concerning performance, there are two things we are interested in: how is the scaling behaviour of the running time as we increase the number of messages we verify? and how does the optimization mentioned in Section~\ref{sec:impl-verification-alg} affect the runtime?
 Concerning storage, we compare how much less storage on the hard disk our design uses by storing account data in the message of a commit compared to storing the data in the tree and blob objects as in the delta-GOC-Ledger by Heisch \cite{delta-goc-ledger-heisch}.
 
 \section{Methodology}
-\subsection{Generating baseline Repository}
+\subsection{Generating the Benchmark Repository}
 \label{sec:base-repo}
 To get a baseline performance and storage measurement, we created a benchmark that contains random transactions between a fixed number of authors, where the number of transactions per author follows a heavy-tailed distribution (a Pareto-distribution in our case), as it often does in real-world scenarios \cite{bitcoin-distribution-transactions}. In the performance benchmark, the number of simulated transactions is varied to indicate asymptotic scaling of the runtime of different parts of the code. Additionally there is an acknowledgement delay, meaning tokens that were given don't get acknowledged immediately. However the messages are assumed to always be replicated instantly, meaning all the participants know about the latest messages when creating a new one. Note that this doesn't mean that messages are totally ordered, since the immediate dependencies of an account message are only of the relevant participants of a transaction.
-
-\subsection{Generating Repository including Forks}
-\todo{if there is time: specify a more general way to generate transaction data including forks and byzantine acknowledgements}
 
 \subsection{Performance benchmark}
 We generate repositories with the number of messages varying from 300 to 900 with a step size of 300 and the number of authors fixed at 30.
@@ -883,7 +887,7 @@ The Code is then run with and without the optimization mentioned in section \ref
 \subsection{Storage Bench: Comparison of storage methods}
 We take the simulation described in section \ref{sec:base-repo} and use it to create repositories with the same encoded transactions, the number of messages being 1000 and the number of authors being 30. The only difference between them is how the messages are stored and how many dependencies each message has.
 
-In the encoding labelled ``Message'', the account data is stored as described in \ref{sec:syntax-of-msgs}. In the ``Tree'' encoding, the account data is stored as nested tree and blob objects, as described by Heisch \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects and GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively).
+In the encoding labelled ``Message'', the account data is stored as described in \ref{sec:syntax-of-msgs}. In the ``Tree'' encoding, the account data is stored as nested tree and blob objects, as described by Heisch \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects whereas GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively).
 
 The number of dependencies is also varied. By ``Extra Deps.'' we mean that a message stores a reference for each other author pointing to the last known message that the creator knew about, as opposed to just the last messages of the authors that appear in the transaction.
 
@@ -937,7 +941,7 @@ Once the summary cache optimization is applied, we see that this scaling is less
 \subsection{Storage Bench}
 When measuring the size of the generated git repositories, we get the result shown in Table~\ref{tab:storage-res}.
 We see that the compressed versions of the tree encoding are less than 10\% of their uncompressed versions, while the compressed versions of the message encoding take up more than 20\% (21\% and 23\%) of the uncompressed ones.
-Additionally, we see the repositories without the extra dependencies are between about 78\% and 92\% of their corresponding repository with the extra dependencies.
+Additionally, we see the repositories without the extra dependencies are between about 78\% and 92\% of the size of their corresponding repository with the extra dependencies.
 We also see that encoding the data as messages and storing no extra dependencies (our approach) uses about 69\% of the space that uses the tree encoding with extra dependencies (proposed by Heisch \cite{delta-goc-ledger-heisch}) uses when looking at the effective size after compressing the files. The difference is bigger if we take a look at the effective size before compressing: then our approach only uses about 29\% of the approach proposed by Heisch.
 
 % \begin{table}
@@ -970,21 +974,23 @@ We also see that encoding the data as messages and storing no extra dependencies
 \end{table}
 \subsubsection{Discussion}
 We see that the space saved by encoding account data in the message of the commit is significant, especially when looking at the uncompressed version of the repositories.
-This is the case, because there are a lot of extra objects that need to be stored in the case of the tree encoding: for each GOC value, we store a blob which is identified with a 32-byte SHA256 value. This value has to be stored in the tree objects. One advantage that the tree encoding could have is deduplication of equivalent values. However by the time deduplication would be effective, i.e. if the number of bytes stored in them is greater than the identifier (greater than 32 bytes), the numbers stored in the objects are unlikely to be equivalent, rendering deduplication unapplicable.
+This is the case, because there are a lot of extra objects that need to be stored in the case of the tree encoding: for each GOC value, we store a blob which is identified with a 32-byte SHA256 value. This value has to be stored in the tree objects. One advantage that the tree encoding could have is deduplication of equivalent values. However by the time deduplication would be effective, i.e. if the number of bytes stored in them is greater than the identifier (greater than 32 bytes), the numbers stored in the objects are unlikely to be equivalent, so deduplication does not apply.
 
-However the tree encoding gets compressed more effectively than the message encoding. We think this is the case because git packs the tree and blob files into files without explicitly storing the identifiers of these objects. Still, our encoding is more effective at storing the data in the benchmark, even after compression.
+The extra dependencies don't take up much of the storage space, however this heavily depends on the number of authors present, so the space savings could be more significant in real-world use cases.
+
+The tree encoding gets compressed more effectively than the message encoding. We think this is the case because git packs the tree and blob files into files without explicitly storing the identifiers of these objects. Still, our encoding is more effective at storing the data in the benchmark, even after compression.
 
 \chapter{Related Work}
-The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken directly from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the Paper of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we partly specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
+The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the Paper of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
 
 \chapter{Conclusion}
-In this report, we specified new invariants that need to be considered when implementing the $\delta$-GOC-Ledger over such a byzantine fault tolerant log and how they interact. We then specified and implemented an algorithm that verifies these invariants. Additionally, we implemented an optimization that reduced the rate of increase of the running time with respect to the number of commits significantly. We also adapted the encoding of the account data in commit objects from the originally proposed design of Heisch and were able to achieve about a 70\% reduction in storage space when uncompressed and about a reduction of 30\% when compressed, while also being easier to retrieve using the Git CLI.
+In this report, we specified new invariants that need to be considered when implementing the $\delta$-GOC-Ledger over a byzantine fault tolerant log such as 2P-BFT-Log and how they interact. We then specified and implemented an algorithm that verifies these invariants. Additionally, we implemented an optimization that reduced the rate of increase of the running time with respect to the number of commits significantly. We also adapted the encoding of the account data in commit objects from the originally proposed design of Heisch and were able to achieve about a 70\% reduction in storage space when uncompressed and about a reduction of 30\% when compressed, while also being easier to retrieve using the Git CLI.
 
-\subsection{Future Work}
+\section {Future Work}
 Considering the design of the algorithm, there are some things to be done; the verification algorithm still has to be extended to include invariant \var{F4}, which we argue should guarantee byzantine repellance, as defined in the Blocklace paper \cite{blocklace-crdt}. Furthermore, the design of our algorithm is not proven to verify the mentioned invariants.
 Additionally, we have to keep track of an increasing amount of state as more commits get verified (for example $C_\emph{msg}$ and $F_\emph{valid}$). This could be solved by using some sort of reference counting technique to drop the entries in these sets that don't get referenced by new commits.
 
-Considering the implementation of the algorithm, we think the creation of the summary can be improved by a lot if the commit traversal ran in the same process as the verification algorithm, rather than calling the Git CLI through the subprocess module. This is possible, because at the time of creating a summary, we have all the data that is needed to traverse the commit graph in $C_\emph{msg}$.
+Considering the implementation of the algorithm, we think the creation of the summary can be improved by running the commit traversal in the same process as the verification algorithm, rather than calling the Git CLI through the subprocess module of python. This is possible, because at the time of creating a summary, we have all the data that is needed to traverse the commit graph in $C_\emph{msg}$.
 
 Considering the performance evaluation of our algorithm, we only took a look at a very basic benchmark that does not include byzantine behaviour. To remedy this, a benchmark would have to be created that includes forks and other byzantine behaviour.
 
