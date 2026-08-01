@@ -1,4 +1,3 @@
-import base64
 import json
 import subprocess
 import os
@@ -10,9 +9,8 @@ from typing import Sequence, Iterable
 parent_folder = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(parent_folder))
 
-from common.datastructures import Commit
+from common.datastructures import Account
 from common.misc import run_cmd, int_to_bytes, author_to_filename
-from common.account import Account
 
 empty_tree = ""
 empty_blob = ""

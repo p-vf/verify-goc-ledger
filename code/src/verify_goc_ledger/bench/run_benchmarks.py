@@ -40,9 +40,9 @@ def main():
             print(f"running {e}")
             # Run benchmark
             if profile_output:
-                new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache)
+                new_row = verify_repo(str(test_dir_full / e), test_dir_full / (stat_prefix + e + ".stats"), None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache, True)
             else:
-                new_row = verify_repo(str(test_dir_full / e), None, None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache)
+                new_row = verify_repo(str(test_dir_full / e), None, None, test_dir_full / (stat_prefix + e + ".csv"), summary_cache, True)
             assert new_row is not None
             new_row["NAME"] = e
             for fieldname in new_row:

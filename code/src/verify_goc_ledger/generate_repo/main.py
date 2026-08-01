@@ -1,16 +1,13 @@
 import random
 import sys
 import abc
-import os
-import time
-import base64
 
 from pathlib import Path
 parent_folder = Path(__file__).resolve().parent
 sys.path.insert(0, str(parent_folder))
 
-from common.misc import author_to_filename, run_cmd, validate_hash, generate_human_names, ask_if_remove_dir, ParetoSampler, get_public_keys, configure_allowed_signers
-from common.account import Account
+from common.misc import author_to_filename, run_cmd, validate_hash, ask_if_remove_dir, ParetoSampler, get_public_keys, configure_allowed_signers
+from common.datastructures import Account
 from common.git_utils import Repo, add_delta_account_as_commit
 
 class BaseRepoGenerator(abc.ABC):
