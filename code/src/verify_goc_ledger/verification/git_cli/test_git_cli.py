@@ -207,12 +207,12 @@ class GitCliGocVerifier:
             for author in authors:
                 if msg_type == MessageType.DELTA_ACC and author in summary.byzantine:
                     return [f"author {author} in the dependencies of account message is labelled byzantine"]
-                elif msg_type == MessageType.BYZ_ACK and author in summary.byz_acked:
+                elif msg_type == MessageType.BYZ_ACK and (author in summary.byz_acked or author not in summary.byzantine):
                     return [f"author {author} in the dependencies of byzantine acknowledgement message is already acknowledged"]
                 if not authors[author] <= summary.frontier[author]:
                     return [f"dependencies {authors[author]} are not a maximal message in the frontier"]
             if msg_type == MessageType.DELTA_ACC:
-                if summary.byzantine - summary.byz_acked:
+                if summary.byzantine != summary.byz_acked:
                     return [f"there is unacknowledged byzantine behaviour in the causal history of account message"]
 
             # d8
