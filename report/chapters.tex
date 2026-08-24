@@ -1,5 +1,5 @@
 \chapter{Introduction}
-In this report we propose a design of the $\delta$-GOC-Ledger \cite{delta-goc-ledger-heisch} over a byzantine fault tolerant log, which is largely based upon the design of 2P-BFT-Log proposed by Lavoie \cite{2p-bft-log}. In doing so, we discovered the need for a new message type (see section \ref{sec:choices}).
+In this report we propose a design of the $\delta$-GOC-Ledger \cite{delta-goc-ledger-heisch} over a byzantine fault tolerant log, which is largely based upon the design of 2P-BFT-Log proposed by Lavoie \cite{2p-bft-log}. In doing so, we discovered the need for a new message type (see section \ref{sec:choices}). In this report, the term ``invariant'' is considered synonymous with ``property''.
 
 In our design, we introduced to the best of our knowledge novel invariants (see section \ref{sec:invariants}). These invariants are: \var{d1} to \var{d7}, \var{M8} and \var{F1} to \var{F4}. To accommodate the new message type, we also adjusted the invariants \var{M3} and \var{M4} from the design of 2P-BFT-Log.
 
@@ -13,7 +13,7 @@ The implementation of the algorithm and source code of this report can be found 
 In this section, relevant background to the concepts in this project are provided. \\
 
 \section{Append-only logs as Hash-Graphs}
-An Append-only log is a distributed data structure that allows participants to share messages between each other. This is done by having each participant have a totally ordered set of messages that gets replicated to the other participants. This can be implemented using hash-graphs, where each message contains the hash of the previous message (if there is any) of the same author. By using a cryptographic hash, we know the messages cannot have been tampered with, as hash-collisions are computationally hard to find. By cryptographically signing the messages we can guarantee that the correct author created the message.
+An append-only log is a distributed data structure that allows participants to share messages between each other. This is done by having each participant have a totally ordered set of messages that gets replicated to the other participants. This can be implemented using hash-graphs, where each message contains the hash of the previous message (if there is any) of the same author. By using a cryptographic hash, we know the messages cannot have been tampered with, as hash-collisions are computationally hard to find. By cryptographically signing the messages we can guarantee that the correct author created the message.
 
 However one problem that arises is that an adversary E can create two messages that are concurrent to each other by referencing the same previous message and distributing each of those messages to different parts of the network. Once the correct participants have replicated these messages, this results in the set of messages belonging to E no longer being totally ordered, breaking the design of naive implementations of append-only logs. In this scenario we say that the log of E is \emph{forked} and E is an \emph{equivocator} \cite{blocklace-crdt}.
 
@@ -33,7 +33,7 @@ The design of 2P-BFT-Log consists of several parts. First of all, each message h
     $M_\emph{author}$ & String (Public Key) & author of the message \\
     $M_\emph{prev}$ & MsgId or $\bot$ & previous message from same author, $\bot$ (null) if none.\\
     $M_\emph{deps}$ & Set of MsgId & State of logs from other authors on which the message depends\\
-    $M_\emph{payload}$ & String & Content of message, in our case representing either an account update or a byzantine acknowledgement (see sections \ref{sec:account-as-str} and \ref{sec:ack-as-str} respectively) \\
+    $M_\emph{payload}$ & String & Content of message, in our case representing either an account update or a byzantine acknowledgement (see section \ref{sec:syntax-of-msgs}) \\
     $M_\emph{signature}$ & String & Signature of the concatenation of the previous fields using the private key corresponding to $M_\emph{author}$.\\
     $M_\emph{date}$ & Timestamp & Date the message was created at \\
     \hline
@@ -54,8 +54,8 @@ The first one is the \emph{happens-before} relationship and is defined as:
 \begin{equation}
     M \rightsquigarrow M' \definedas \begin{cases}
         M = M'_\emph{prev} = \bot \\
-        \msgId(M) = M'\emph{prev} \\
-        \msgId(M) \in M'\emph{deps} \\
+        \msgId(M) = M'_\emph{prev} \\
+        \msgId(M) \in M'_\emph{deps} \\
         \exists M'' : M \rightsquigarrow M'' \rightsquigarrow M'
     \end{cases}
     \label{eqn:happens-before}
@@ -65,7 +65,7 @@ Additionally, the author-specific happens-before relationship is defined as
 \begin{equation}
     M \happensbeforelog M' \definedas \begin{cases}
         M = M'_\emph{prev} = \bot \\
-        \msgId(M) = M'\emph{prev} \\
+        \msgId(M) = M'_\emph{prev} \\
         \exists M'' : M \happensbeforelog M'' \happensbeforelog M'
     \end{cases}
     \label{eqn:happens-before-author}
@@ -82,7 +82,7 @@ If neither $M$ or $M'$ is smaller than the other, they are called concurrent ($\
     M \parallel_\mathcal{M} M' \definedas M {\nleq_\mathcal{M}} M' \land M' {\nleq_\mathcal{M}} M
 \]
 
-We define the strict causal history of message $M$ as the messages that happened before message $M$:
+We define the strict causal history of message $M$ as the set of messages that happened before message $M$:
 \[
     \mathcal H_<(M) \definedas \{M' : M' \rightsquigarrow M\}
 \]
@@ -129,9 +129,11 @@ Furthermore, there is also a merge operation on a ledger and an account, also de
 \end{align*}
 
 Additionally, we define a repeated merge operation over a set of accounts $\mathcal A = \{A_1, \ldots, A_n\}$ as the ledger after applying the account updates:
-\[
-\bigsqcup_{A \in \mathcal A} A \definedas \left(\left(\ldots\left(\left(\emptyset \sqcup A_1\right) \sqcup A_2\right) \sqcup\ldots\right)\sqcup A_{n-1}\right)\sqcup A_n
-\]
+\begin{equation}
+    \label{eqn:bigsqcup}
+    \bigsqcup_{A \in \mathcal A} A \definedas \left(\left(\ldots\left(\left(\emptyset \sqcup A_1\right) \sqcup A_2\right) \sqcup\ldots\right)\sqcup A_{n-1}\right)\sqcup A_n
+\end{equation}
+where the inner most left argument, denoted as the empty set, is the empty ledger, and we use the second definition of the $\sqcup$ operator, i.e. where the left argument is a ledger and the right argument an account.
 
 
 \subsection{Delta Accounts}
@@ -159,7 +161,7 @@ A fork proof is a set of messages which all have the same previous message. We d
             &\land \textsc{Signed}(M)
             \land \textsc{Signed}(M')
         \end{aligned}
-    \right)
+    \right) \land \lvert S \rvert \ge 2
 \]
 
 For ease of writing, we define some functions related to the immediate dependencies of a message.
@@ -172,14 +174,14 @@ Similarly, the function \var{prev} of $M$ denotes its previous message.
     \bot & \text{ otherwise}
 \end{cases} \]
 
-A message $M$ in our design can have one of two types; either it has the type account (denoted \var{ACCOUNT}) or it has the type byzantine acknowledgement (denoted \var{BYZ\_ACK}). The type is encoded within its payload and retrieved with $\msgType(M)$. The roles of these message types is specified in section \ref{sec:choices}. The function $\acc$ is the function that retrieves the account fields encoded in $M_\emph{payload}$, the author identifier from $M_\emph{author}$ (i.e. $(\acc(M))_\emph{author} = M_\emph{author}$), and is only defined if $\msgType(M) = \var{ACCOUNT}$.
+A message $M$ in our design can have one of two types; either it has the type account (denoted \var{ACCOUNT}) or it has the type byzantine acknowledgement (denoted \var{BYZ\_ACK}). The type is encoded within its payload and retrieved with $\msgType(M)$. The roles of these message types is specified in section \ref{sec:choices}. The $\acc$ is the function that, given a message $M$, retrieves its account fields encoded in $M_\emph{payload}$, the author identifier from $M_\emph{author}$ (i.e. $(\acc(M))_\emph{author} = M_\emph{author}$), and is only defined if $\msgType(M) = \var{ACCOUNT}$. How this function is defined varies in each implementation, as the encoding of the account is not defined in the conceptual design of this data structure.
 
 The set $\max_A(\mathcal M)$ is the set of message ids belonging to maximal messages in the set of messages $\mathcal M$ that were created by author $A$, when looking at the author-specific happens-before relationship ($\happensbeforelog$).
 \[
     \max_A(\mathcal M) \definedas \{\msgId(M) \mid M \in \textsc{Signed}_A(\mathcal M) \land \forall M' \in \textsc{Signed}_A(\mathcal M) : M \not\happensbeforelog M'\}
 \]
 
-There are multiple authors that we need to track of during verification. We combine this information in a frontier. A frontier is a map of author ids to a set of messages and is defined over a set of messages $\mathcal M$, written $F(\mathcal M)$.
+There are multiple authors that we need to track of during verification. We combine this information in a frontier. A frontier is a map of author ids to a set of messages and is defined over a set of messages $\mathcal M$, written $F(\mathcal M)$. The reason we map author ids to sets of messages as opposed to single messages is because an author may fork their log, creating multiple maximal elements in their log which we need to keep track of.
 \begin{equation}
     \label{eqn:frontier}
     F(\mathcal M) \definedas \{A \mapsto \max_A(\mathcal M) \mid \exists M \in \mathcal M : A = M_\emph{author} \land \textsc{Signed}(M)\}
@@ -204,7 +206,7 @@ The function \var{byz} of a set of messages $S$ is the set of authors exhibiting
     &)\}
 \end{align*}
 
-Where $\var{valid}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and further invariants hold for the message specified in section \ref{sec:invariants}. It is important to note that our design of the predicate $\var{valid}$ does not follow the convention proposed in the design of the Blocklace paper that messages from known byzantine actors are ignored, see section \ref{sec:invariants-delta-a} for justification.
+Where $\var{valid}$ is a predicate that is true iff the message is syntactically well formed (see section \ref{sec:syntax-of-msgs}), and further invariants hold for the message specified in section \ref{sec:invariants}. It is important to note that our design of the predicate $\var{valid}$ does not follow the convention proposed in the design of the Blocklace paper that messages from known byzantine actors are ignored when computing the valid state of a CRDT, see section \ref{sec:invariants-delta-a} for justification.
 
 \section{Invariants}
 \label{sec:invariants}
@@ -212,13 +214,14 @@ In this section we introduce the invariants of our design. We start by introduci
 
 \subsection{Invariants on message \(M\) and corresponding delta account}
 \label{sec:invariants-delta-a}
-The following invariants only apply, if $\msgType(M) = \var{ACCOUNT}$.
+The following invariants only apply, if $\msgType(M) = \var{ACCOUNT}$. We decided that delta-accounts may update more than one counter. This was done to open up the possibility to safe space, as multiple updates can be put into one message, splitting the overhead of storing a message among the updates.
+
 Let $L_\emph{before}$ be the state of the ledger before update $\deltacc{A}$ was performed. Formally, this can be described as
 \begin{equation}
     L_\emph{before} = \bigsqcup_{M' \in H_\emph{acc}} \acc(M')
     \label{eqn:l-before-def}
 \end{equation}
-where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT} \land \var{valid}(M')\}$ is the set of all delta accounts in the strict causal history of $M$.
+where $H_\emph{acc} = \{M' \in \mathcal H_<(M) \mid \msgType(M') = \var{ACCOUNT} \land \var{valid}(M')\}$ is the set of all delta accounts in the strict causal history of $M$, and $\bigsqcup$ is the iterated operator that applies the merging operations to the account states, resulting in a ledger (See Equation \ref{eqn:bigsqcup}).
 
 Since we merge account states no matter if the corresponding authors forked their log, this means that double spending is not prevented nor handled correctly: if a double spending happens, tokens get created out of thin air by the equivocator. This leads to byzantine processes being able to generate an arbitrary number of tokens. However fixing this issue is more involved: if we simply ignore messages that come from byzantine processes, correct replicas that received money from such byzantine replicas lose tokens, which might lead to a negative balance which is not allowed under normal circumstances. An economical design that handles double spending in some way, preventing correct replicas from losing tokens due to invalidated messages is required to fix this issue but is outside the scope of this project.
 
@@ -313,9 +316,9 @@ We want to ensure that authors don't make any transactions with an author that h
     If $\msgType(M) = \var{ACCOUNT}$, then the following must hold: for any author $a \in \var{byz}(\mathcal H_<(M))$, there must be no message $M' \in \var{deps}(M)$ with $M'_\emph{author} = a$.
 \end{invariant}
 
-We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages known to a message, all its immediate dependencies must know about this (see invariant \var{F2}). An exception is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
+We also want to ensure that participants don't make transactions with authors that haven't acknowledged the byzantine behaviour present in the message graph. This means that if there is byzantine behaviour in the set of messages reachable from a message, all its immediate dependencies must know about this (see invariant \var{F2}). An exception is made for byzantine acknowledgement messages, as - by design - they cannot satisfy this criteria.
 \begin{invariant}{\var{F2}}
-    \emph{(acknowledgement before transaction)}:\\
+    \emph{(byzantine acknowledgement before transaction)}:\\
     If $\msgType(M) = \var{ACCOUNT}$ then for any message $M' \in \var{deps}(M)$,
     $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$ must hold.
 \end{invariant}
@@ -327,7 +330,7 @@ To ensure that byzantine acknowledgement messages only have necessary immediate 
     If $\msgType(M) = \var{BYZ\_ACK}$ then for all $M'\in \var{deps}(M)$, the condition $$\var{byz}(\mathcal H_\le((\var{deps}(M) \cup \{\var{prev}(M)\}) \setminus \{M'\}) ) \subset \var{byz}(\mathcal H_<(M))$$ must hold.
 \end{invariant}
 
-The invariant \var{F4} ensures that additionally, any message that is in the dependencies must be a minimal message that makes its author byzantine.
+The invariant \var{F4} ensures that additionally, any message that is in the dependencies must be a minimal message that proves its author byzantine.
 
 \begin{invariant}{\var{F4}}
     \emph{(minimal dependencies of acknowledgement)}:\\
@@ -336,7 +339,7 @@ The invariant \var{F4} ensures that additionally, any message that is in the dep
 
 Our algorithm does not verify the invariant \var{F4}, but \var{F3} which is quite similar, but easier to verify. In \var{F3}, there is no requirement for minimality of the message $M'$. This means that any of the messages that get added to the causal history by $M'$ must make a new author byzantine, not just the message $M'$.
 
-If we don't check \var{F4} this allows byzantine colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labelled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour.
+If we don't check \var{F4} this allows byzantine colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. This is analogous to the attack proposed by Lavoie \cite{blocklace-attack}. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labelled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour. However, colluders may still include arbitrarily many messages into their causal history after a fork by only including messages from one branch of the fork and not acknowledging another branch.
 
 \section{Syntax of Messages}
 \label{sec:syntax-of-msgs}
@@ -386,32 +389,32 @@ For readability the rest of the function \textsc{VerifyMessage} was split up int
 
 \subsection{Summary Data Structure}
 In the verification algorithm, we use a data structure that we call a summary.
-The summary is an accumulation of information necessary to verify the invariants \var{M7}, \var{F1}, \var{F2}, \var{F3} and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}\footnote{The fields $S_\emph{account}$ and $S_\emph{recieved}$ represent the relevant parts of $L_\emph{before}$ in Equation~\ref{eqn:l-before-def}}, and is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$.
+The summary is an accumulation of information necessary to verify the invariants \var{M7}, \var{F1}, \var{F2}, \var{F3} and the invariants related to the delta account state on message $M$. A summary $S$ contains the fields listed in Table \ref{tab:summary-fields}\footnote{The fields $S_\emph{account}$ and $S_\emph{received}$ represent the relevant parts of $L_\emph{before}$ in Equation~\ref{eqn:l-before-def}}, and is always defined with respect to a message $M$, we write $S = \textsc{CreateSummary}(M)$.
 An explicit procedure for $\textsc{CreateSummary}$ is given in Algorithm~\ref{alg:create-summary}.
 \begin{table}[ht]
     \centering
-    \begin{tabular}{|l|p{4cm}|p{6cm}|}
+    \begin{tabular}{|l|p{3cm}|p{7cm}|}
         \hline
         \textbf{Field} & \textbf{Type} & \textbf{Meaning} \\ \hline
         $S_\emph{frontier}$ &
         Map of String (author) to Set of Message&
-        Frontier of messages $F(\mathcal H_<(M))$ as in Equation~\ref{eqn:frontier}.
+        Frontier of messages $F(\mathcal H_<(M))$ as in Equation~\ref{eqn:frontier}. Needed to keep track of what messages $M_\emph{author}$ must have known about before creating $M$.
         \\ \hline
         $S_\emph{byzantine}$ &
         Set of String (author)&
-        Set of authors that exhibit byzantine behaviour in $\mathcal H_<(M)$.
+        Set of authors that exhibit byzantine behaviour in $\mathcal H_<(M)$. Needed for the check that $M$ isn't an acknowledgement of tokens from a known byzantine author.
         \\ \hline
         $S_\emph{byz\_acked}$ &
         Set of String (author)&
-        Set of byzantine authors in $\mathcal H_<(M)$ acknowledged by $M_\emph{author}$.
+        Set of byzantine authors in $\mathcal H_<(M)$ acknowledged by $M_\emph{author}$. Needed for the check that if $\msgType(M) = \var{BYZ\_ACK}$, it must only have new byzantine authors in its dependencies.
         \\ \hline
         $S_\emph{account}$ &
         Account &
-        The result of merging all the valid account messages in $\mathcal H_<(M)$ that belong to $M_\emph{author}$.
+        The result of merging all the valid account messages in $\mathcal H_<(M)$ that belong to $M_\emph{author}$. Needed for checking non-negative balance and that counter updates are not redundant.
         \\ \hline
-        $S_\emph{recieved}$ &
+        $S_\emph{received}$ &
         Map of String (author) to Number &
-        Maps authors to the number of tokens that were given by them to $M_\emph{author}$.
+        Maps authors to the number of tokens that were given by them to $M_\emph{author}$. Needed for checking the validity of any acknowledgement in $M$ if $\msgType(M) = \var{ACCOUNT}$ and $\acc(M)_\leftarrow \neq \emptyset$.
         \\ \hline
     \end{tabular}
     \caption{Fields in a summary object of message $M$.}
@@ -432,7 +435,7 @@ If $N$ is a byzantine acknowledgement message that comes from the same author as
     \Statex \textbf{Precondition:} all messages in $\mathcal H_<(M)$ have been checked, i.e. for any message $N \in \mathcal H_<(M)$, $\var{valid}(N) \Leftrightarrow N \in F_\emph{valid}$ holds.
     % \State $\var{Summary}_\emph{author} \gets M_\emph{author}$
     \State $\var{Summary}_\emph{account} \gets \Call{InitializeAccount}{M_\emph{author}}$
-    \State $\var{Summary}_\emph{recieved} \gets \emptyset$ \Comment{Map of author to number}
+    \State $\var{Summary}_\emph{received} \gets \emptyset$ \Comment{Map of author to number}
     \State $\var{Summary}_\emph{frontier} \gets \emptyset$ \Comment{Map of author to log}
     \State $\var{Summary}_\emph{byzantine} \gets \emptyset$
     \State $\var{Summary}_\emph{byz\_acked} \gets \emptyset$
@@ -499,12 +502,13 @@ If $N$ is a byzantine acknowledgement message that comes from the same author as
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Verifying the invariants \var{M1} to \var{M7}, and \var{F1}, to \var{F3}}
+\subsection{Verifying the invariants \var{M1} to \var{M7}, and \var{F1} to \var{F3}}
 \label{sec:m-invariant-checks}
 
 The simple invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\emph{valid}$ and listed in Table \ref{tab:invariant-code-msg}. Each of the simple conditions corresponds to an if statement that returns false if the condition is met.
 
 \begin{table}
+    \centering
 \begin{tabular}{|l|l|}
 \hline
 \textbf{Invariant} & \textbf{Violated when} \\
@@ -515,7 +519,7 @@ The simple invariants were re-expressed in terms of $C_\emph{msg}$, $M$ and $F_\
 & $\ \lor M_\emph{deps} \not\subseteq (C_\emph{msg})_*$ \\ \hline
 \var{M4} & see Algorithm \ref{alg:m4}\\ \hline
 \var{M5} & $\lnot\Call{Signed}{M}$\\ \hline
-\var{M6} & never, because message graph is cryptographic hash-graph \\ \hline
+\var{M6} & never, because message graph is a cryptographic hash-graph \\ \hline
 \var{M7}, \var{F1} - \var{F4} & see Algorithm \ref{alg:m7f1} \\ \hline
 \var{M8} & $(C_\emph{msg}[M_\emph{prev}])_\emph{date} > M_\emph{date}$\\
 \hline
@@ -627,6 +631,7 @@ $\deltacc{A}$ represents the newly added delta account and $A_\emph{new}$ is the
 
 As before, many invariant checks are simple if-conditions, which are re-expressed in terms of $A_\emph{old}$, $\deltacc{A}$, $A_\emph{new}$, $C_\emph{msg}$ and $M$, and listed in Table~\ref{tab:invariant-code-delta}.
 \begin{table}[ht]
+    \centering
 \begin{tabular}{|c|l|}
 \hline
 \textbf{Invariant} & \textbf{Violated when} \\
@@ -684,7 +689,7 @@ To check \var{d7}, i.e. that all necessary dependencies are present, we can chec
     \Statex \textbf{Precondition:} \var{Authors} has been calculated as in Algorithm~\ref{alg:m4}, \var{Summary} has been calculated as in Algorithm~\ref{alg:m7f1}.
     \Statex \ldots \vphantom{I}
     \ForAll{$\var{Author} \in \deltacc{A}_{\leftarrow*}$} \Comment $\delta3$
-        \If{$\var{Author} \notin (\var{Summary}_\emph{recieved})_* \lor \var{Summary}_\emph{received}[\var{Author}] < \deltacc{A}_{\leftarrow}[\var{Author}]$}
+        \If{$\var{Author} \notin (\var{Summary}_\emph{received})_* \lor \var{Summary}_\emph{received}[\var{Author}] < \deltacc{A}_{\leftarrow}[\var{Author}]$}
             \State \Return false
         \EndIf
     \EndFor
@@ -833,7 +838,7 @@ Now instead of always recreating the summary from scratch, we implemented an opt
 
 The modified summaries in the summary cache can then be used to compute $\textsc{CreateSummary}(M')$, where $M'$ is a message, more efficiently, if the modified summary $S'$ in the cache corresponding to author $M'_\emph{author}$ has $S'_\emph{frontier}[M'_\emph{author}] = \{M'_\emph{prev}\}$. This is the case if the previously visited message of author $M'_\emph{author}$ corresponds to $M'_\emph{prev}$ and $M'_\emph{author}$ did not acknowledge a fork of their own.
 
-Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only traversing the messages that come after all of the messages in $S'_\emph{frontier}$. The command to retrieve these messages in git is \texttt{git log <m>\^{} \^{}<f1> \^{}<f2> ... \^{}<fn>}, where \texttt{<fi>} represent the message ids in $S'_\emph{frontier}$ and \texttt{<m>} represents $\msgId(M')$.  The impact of this optimization can be seen in the Section~\ref{sec:results}.
+Once this condition is true, we can compute $\textsc{CreateSummary}(M')$ by only traversing the messages that come after all of the messages in $S'_\emph{frontier}$. The command to retrieve these messages in git is \texttt{git log <m>\^{} \^{}<f1> \^{}<f2> ... \^{}<fn>}, where \texttt{<fi>} represent the message ids in $S'_\emph{frontier}$ and \texttt{<m>} represents $\msgId(M')$.  The impact of this optimization can be seen in the Section~\ref{sec:results:perf-baseline}.
 
 % \section{Proposal of Extension to 2P-BFT-Log}
 % \todo{explain how the arcs in the diagrams map to \_prev and \_deps}
@@ -873,34 +878,20 @@ When evaluating our design, we focused on two metrics. The first was performance
 Concerning performance, there are two things we are interested in: how is the scaling behaviour of the running time as we increase the number of messages we verify? and how does the optimization mentioned in Section~\ref{sec:impl-verification-alg} affect the runtime?
 Concerning storage, we compare how much less storage on the hard disk our design uses by storing account data in the message of a commit compared to storing the data in the tree and blob objects as in the delta-GOC-Ledger by Heisch \cite{delta-goc-ledger-heisch}.
 
-\section{Methodology}
+\section{General Methodology}
 \subsection{Generating the Benchmark Repository}
 \label{sec:base-repo}
 To get a baseline performance and storage measurement, we created a benchmark that contains random transactions between a fixed number of authors, where the number of transactions per author follows a heavy-tailed distribution (a Pareto-distribution in our case), as it often does in real-world scenarios \cite{bitcoin-distribution-transactions}. In the performance benchmark, the number of simulated transactions is varied to indicate asymptotic scaling of the runtime of different parts of the code. Additionally there is an acknowledgement delay, meaning tokens that were given don't get acknowledged immediately. However the messages are assumed to always be replicated instantly, meaning all the participants know about the latest messages when creating a new one. Note that this doesn't mean that messages are totally ordered, since the immediate dependencies of an account message are only of the relevant participants of a transaction.
 
-\subsection{Performance benchmark}
-We generate repositories with the number of messages varying from 300 to 900 with a step size of 300 and the number of authors fixed at 30.
-To measure the runtime of different parts of the code, we use the \texttt{perf\_counter} function from the \texttt{time} module in the standard library of python \cite{pythonPerfCounterNs}.
-We split the code into various non-overlapping sections that get measured individually and get a label in the plot.
-The Code is then run with and without the optimization mentioned in section \ref{sec:impl-verification-alg}.
-
-\subsection{Storage Bench: Comparison of storage methods}
-We take the simulation described in section \ref{sec:base-repo} and use it to create repositories with the same encoded transactions, the number of messages being 1000 and the number of authors being 30. The only difference between them is how the messages are stored and how many dependencies each message has.
-
-In the encoding labelled ``Message'', the account data is stored as described in \ref{sec:syntax-of-msgs}. In the ``Tree'' encoding, the account data is stored as nested tree and blob objects, as described by Heisch \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects whereas GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively).
-
-The number of dependencies is also varied. By ``Extra Deps.'' we mean that a message stores a reference for each other author pointing to the last known message that the creator knew about, as opposed to just the last messages of the authors that appear in the transaction.
-
-To measure the size of the generated repositories, we use the unix command \texttt{du} (disk usage) on the corresponding \texttt{.git} directory with the flag \texttt{-s} to get the total storage size this directory takes up. This value is in the column ``Effective Size''. The command \texttt{git gc} is used to compress the git repository. We measure each size before and after running this command which correspond to the columns ``Uncompressed'' and ``Compressed'' respectively.
-
 \subsection{Relevant Specs of System}
 The Benchmarks are run on a Lenovo ThinkPad X13 2-in-1 with the specs shown in Table~\ref{tab:specs}.
-One important thing to note when using WSL2 as a virtual machine is that the performance is degraded significantly when accessing files from a mounted directory \cite{wsl2FilesystemPerf}. We run the benchmark with associated data in the home directory, where this issue doesn't arise.
+One important thing to note when using Windows Subsystem for Linux 2 (WSL2) as a virtual machine is that the performance is degraded significantly when accessing files from a mounted directory \cite{wsl2FilesystemPerf}. We run the benchmark with associated data in the home directory, where this issue doesn't arise.
+
 \begin{table}
 \centering
 \begin{tabular}{|l|p{6cm}|}
     \hline
-    OS & WSL version 2.7.10.0 running Ubuntu 24.04.4 LTS with Microsoft Windows 11 Pro as host OS\\ \hline
+    OS & Windows Subsystem for Linux version 2.7.10.0 running Ubuntu 24.04.4 LTS with Microsoft Windows 11 Pro as host OS\\ \hline
     System Type & x64-based PC\\ \hline
     Processor & Intel(R) Core(TM) Ultra 5 125U, 1300 Mhz, 12 Cores, 14 Logical Processors\\ \hline
     Installed Physical Memory (RAM) & 16.0 GB\\ \hline
@@ -910,9 +901,15 @@ One important thing to note when using WSL2 as a virtual machine is that the per
 \label{tab:specs}
 \end{table}
 
-\section{Results}
-\label{sec:results}
-\subsection{Performance of Verification Algorithm on baseline repository}
+\section{Performance benchmark}
+\subsection{Methodology}
+We generate repositories with the number of messages varying from 300 to 900 with a step size of 300 and the number of authors fixed at 30.
+To measure the runtime of different parts of the code, we use the \texttt{perf\_counter} function from the \texttt{time} module in the standard library of python \cite{pythonPerfCounterNs}.
+We split the code into various non-overlapping sections that get measured individually and get a label in the plot.
+The code is then run with and without the optimization mentioned in section \ref{sec:impl-verification-alg}.
+The benchmarks were only run once, which explains some of the variance in the results.
+
+\subsection{Results}
 \label{sec:results:perf-baseline}
 \begin{figure}
     \centering
@@ -928,7 +925,7 @@ One important thing to note when using WSL2 as a virtual machine is that the per
     \label{fig:perf-result}
 \end{figure}
 
-The results of the performance benchmark done on the baseline repository are shown in figure \ref{fig:perf-result}. The sections corresponding to ``commit retrieval'', ``signature check'', ``summary creation'' and ``remaining'' are the total time spent checking the signatures of commits, retrieving all the commits initially, creating the summary and the remaining time not measured by any of the other ones, respectively. Most of the remaining time will be taken up by checking the invariants given the summary data structure.
+The results of the performance benchmark done on the baseline repository are shown in figure \ref{fig:perf-result}. The sections corresponding to ``signature check'', ``commit retrieval'', ``summary creation'' and ``remaining'' are the total time spent respectively checking the signatures of commits, retrieving all the commits initially, creating the summary and the remaining time not measured by any of the other ones. Most of the remaining time will be taken up by checking the invariants given the summary data structure.
 If we take a look at the verification algorithm without the summary cache optimization, we see that the total running time (top of the bars) increases more than proportionally with respect to the number of commits. The section that is responsible for this scaling is mostly ``create summary''. However if we take a look at the graph with the summary cache optimization, we see that ``create summary'' is no longer that big of a part of the total runtime and increases less quickly.
 
 \subsubsection{Discussion}
@@ -938,7 +935,17 @@ If we take a look at the graph without the summary cache optimization, we see th
 
 Once the summary cache optimization is applied, we see that this scaling is less aggressive, yet still not proportional to the number of commits. This is not because we occasionally miss the cache: since there are no forks, cache misses are impossible (except for the initial messages of an author). We believe this scaling is this way because the more commits we have visited previously, even if we get a summary cache hit, the more additional commits may need to be traversed to create the summary.
 
-\subsection{Storage Bench}
+\section{Storage Bench: Comparison of storage methods}
+\subsection{Methodology}
+We take the simulation described in section \ref{sec:base-repo} and use it to create repositories with the same encoded transactions, the number of messages being 1000 and the number of authors being 30. The only difference between them is how the messages are stored and how many dependencies each message has.
+
+In the encoding labelled ``Message'', the account data is stored as described in \ref{sec:syntax-of-msgs}. In the ``Tree'' encoding, the account data is stored as nested tree and blob objects, as described by Heisch \cite{delta-goc-ledger-heisch}. More concretely json objects in our encoding map to tree objects whereas GOCs are represented as blob objects which contain the bytes that represent the number they store (using the functions \verb|int.to_bytes| and \verb|int.from_bytes| in the standard library of python to encode and decode respectively).
+
+The number of dependencies is also varied. By ``Extra Deps.'' we mean that a message stores a reference for each other author pointing to the last known message that the creator knew about, as opposed to just the last messages of the authors that appear in the transaction.
+
+To measure the size of the generated repositories, we use the unix command \texttt{du} (disk usage) on the corresponding \texttt{.git} directory with the flag \texttt{-s} to get the total storage size this directory takes up. This value is in the column ``Effective Size''. The command \texttt{git gc} is used to compress the git repository. We measure each size before and after running this command which correspond to the columns ``Uncompressed'' and ``Compressed'' respectively.
+
+\subsection{Results}
 When measuring the size of the generated git repositories, we get the result shown in Table~\ref{tab:storage-res}.
 We see that the compressed versions of the tree encoding are less than 10\% of their uncompressed versions, while the compressed versions of the message encoding take up more than 20\% (21\% and 23\%) of the uncompressed ones.
 Additionally, we see the repositories without the extra dependencies are between about 78\% and 92\% of the size of their corresponding repository with the extra dependencies.
@@ -981,7 +988,7 @@ The extra dependencies don't take up much of the storage space, however this hea
 The tree encoding gets compressed more effectively than the message encoding. We think this is the case because git packs the tree and blob files into files without explicitly storing the identifiers of these objects. Still, our encoding is more effective at storing the data in the benchmark, even after compression.
 
 \chapter{Related Work}
-The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the Paper of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
+The design of the delta-GOC-Ledger, as well as of the 2P-BFT-Log was taken from the Masters Thesis of Heisch \cite{delta-goc-ledger-heisch} and the article of Lavoie \cite{2p-bft-log} respectively. What was attempted in this report was to unify the two designs. To do this, we took inspiration from the Blocklace paper by Almeida et al. \cite{blocklace-crdt}. Additionally, none of the papers mentioned above described a verification procedure, which we specified and implemented. We also extended the designs by limiting the number of dependencies per transaction and adding a new message type.
 
 \chapter{Conclusion}
 In this report, we specified new invariants that need to be considered when implementing the $\delta$-GOC-Ledger over a byzantine fault tolerant log such as 2P-BFT-Log and how they interact. We then specified and implemented an algorithm that verifies these invariants. Additionally, we implemented an optimization that reduced the rate of increase of the running time with respect to the number of commits significantly. We also adapted the encoding of the account data in commit objects from the originally proposed design of Heisch and were able to achieve about a 70\% reduction in storage space when uncompressed and about a reduction of 30\% when compressed, while also being easier to retrieve using the Git CLI.
