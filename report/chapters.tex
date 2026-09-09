@@ -323,7 +323,7 @@ We also want to ensure that participants don't make transactions with authors th
     $$\var{byz}(\mathcal H_<(M)) = \var{byz}(\mathcal H_\leq(M'))$$ must hold.
 \end{invariant}
 
-To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages in the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant \var{F4}).
+To ensure that byzantine acknowledgement messages only have necessary immediate dependencies (in the same sense as before), we check that if any of the messages in the immediate dependencies were to be removed, the set of byzantine authors would shrink (see invariant \var{F3}).
 
 \begin{invariant}{\var{F3}}
     \emph{(necessary dependencies of acknowledgement)}:\\
@@ -339,7 +339,7 @@ The invariant \var{F4} ensures that additionally, any message that is in the dep
 
 Our algorithm does not verify the invariant \var{F4}, but \var{F3} which is quite similar, but easier to verify. In \var{F3}, there is no requirement for minimality of the message $M'$. This means that any of the messages that get added to the causal history by $M'$ must make a new author byzantine, not just the message $M'$.
 
-If we don't check \var{F4} this allows byzantine colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. This is analogous to the attack proposed by Lavoie \cite{blocklace-attack}. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labelled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour. However, colluders may still include arbitrarily many messages into their causal history after a fork by only including messages from one branch of the fork and not acknowledging another branch.
+If we don't check \var{F4} this allows byzantine colluders to pollute the causal history with arbitrarily many messages after a fork in a log. To show this, we can take a look at an example; If $E$ is a byzantine node and $C$ its colluder, where $E$ has forked their log and created many messages after this on either end. A colluder can then include any of these messages in the causal history with a byzantine acknowledgement message. So long as this acknowledgement is the first message that acknowledges the byzantine behaviour of $E$, this message is labelled as valid by \var{F3}. If we look at \var{F4}, we see that such behaviour would not be allowed. $C$ would have to acknowledge the first message that proves $E$'s byzantine behaviour. However, colluders may still include arbitrarily many messages into their causal history after a fork by only including messages from one branch of the fork and not acknowledging another branch, or they may keep creating bogus identities that create invalid or concurrent messages which get included by correct replicas as evidence for byzantine behaviour. The latter is analogous to the attack proposed by Lavoie \cite{blocklace-attack}.
 
 \section{Syntax of Messages}
 \label{sec:syntax-of-msgs}
